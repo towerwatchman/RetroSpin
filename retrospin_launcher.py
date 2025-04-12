@@ -89,8 +89,10 @@ def is_disc_present(drive_path):
 
 def read_psx_game_id(drive_path):
     """Read PSX game serial from system.cnf on physical disc, minimizing drive activity."""
+    mount_point = "/mnt/cdrom"
     try:
-        mount_point = "/mnt/cdrom"
+        # Ensure mount point is clean
+        os.system(f"umount {mount_point} 2>/dev/null")
         if not os.path.exists(mount_point):
             os.makedirs(mount_point)
         
@@ -103,6 +105,7 @@ def read_psx_game_id(drive_path):
             mount_result = os.system(mount_cmd)
             if mount_result != 0:
                 print(f"Failed to mount {drive_path} with iso9660 or udf. Return code: {mount_result}")
+                os.system(f"umount {mount_point} 2>/dev/null")
                 return None
             else:
                 print(f"Successfully mounted {drive_path} with udf")
@@ -143,6 +146,8 @@ def read_psx_game_id(drive_path):
         print(f"Error reading PSX disc: {e}")
         os.system(f"umount {mount_point} 2>/dev/null")
         return None
+    finally:
+        os.system(f"umount {mount_point} 2>/dev/null")  # Ensure cleanup
 
 def read_saturn_game_id(drive_path):
     """Read Saturn game serial from disc header at offset 0x20-0x2A on physical disc."""
@@ -151,8 +156,9 @@ def read_saturn_game_id(drive_path):
             f.seek(0)  # Sector 0
             sector = f.read(2048)
             game_serial = sector[32:42].decode('ascii', errors='ignore').strip()  # Offset 0x20-0x2A
-            if not game_serial:
-                print("No valid serial found in disc header.")
+            # Validate serial to avoid empty or invalid values
+            if not game_serial or game_serial == '\x00' * len(game_serial):
+                print("No valid serial found in disc header (empty or null).")
                 return None
             print(f"Extracted Saturn Game Serial: {game_serial}")
             return game_serial
@@ -161,9 +167,10 @@ def read_saturn_game_id(drive_path):
         return None
 
 def find_game_file(title, system):
-    """Search for .chd or .cue game file based on system."""
+    """Search for .chd or complete .cue/.bin game files based on system."""
     paths = PSX_GAME_PATHS if system == "PSX" else SATURN_GAME_PATHS
     
+    # Check for .chd first
     game_filename = f"{title}.chd"
     for base_path in paths:
         game_file = os.path.join(base_path, game_filename)
@@ -175,24 +182,32 @@ def find_game_file(title, system):
                 print(f"Game file {game_file} is not readable")
             return game_file
     
+    # Check for .cue and corresponding .bin
     game_filename = f"{title}.cue"
     for base_path in paths:
-        game_file = os.path.join(base_path, game_filename)
-        if os.path.exists(game_file):
-            print(f"Found .cue game file: {game_file}")
-            if os.access(game_file, os.R_OK):
-                print(f"Game file {game_file} is readable")
+        cue_file = os.path.join(base_path, game_filename)
+        bin_file = os.path.join(base_path, f"{title}.bin")
+        if os.path.exists(cue_file):
+            if os.path.exists(bin_file):
+                print(f"Found complete .cue/.bin pair: {cue_file}, {bin_file}")
+                if os.access(cue_file, os.R_OK) and os.access(bin_file, os.R_OK):
+                    print(f"Game files {cue_file} and {bin_file} are readable")
+                else:
+                    print(f"Game files {cue_file} or {bin_file} are not readable")
+                return cue_file
             else:
-                print(f"Game file {game_file} is not readable")
-            return game_file
+                print(f"Found .cue without .bin: {cue_file}")
+                return None  # Trigger save due to incomplete pair
+        else:
+            print(f"No .cue file found for: {title}")
     
-    print(f"No .chd or .cue game file found for: {title}")
+    print(f"No complete .chd or .cue/.bin game files found for: {title}")
     return None
 
 def show_popup(message):
     """Display a popup message on MiSTer."""
     try:
-        dialog_cmd = f"dialog --msgbox \"{message}\" 10 40"
+        dialog_cmd = f"dialog --msgbox \"{message}\" 12 40"
         with open(MISTER_CMD, "w") as cmd_file:
             cmd_file.write(dialog_cmd + "\n")
             cmd_file.flush()
@@ -293,8 +308,15 @@ def main():
             
             print(f"Checking drive {drive_path}...")
             
-            # Try PSX first
-            psx_game_serial = read_psx_game_id(drive_path)
+            # Try PSX with retries
+            psx_game_serial = None
+            for attempt in range(2):
+                psx_game_serial = read_psx_game_id(drive_path)
+                if psx_game_serial:
+                    break
+                print(f"PSX read attempt {attempt + 1} failed, retrying after delay...")
+                time.sleep(1)
+                os.system(f"umount /mnt/cdrom 2>/dev/null")  # Force unmount
             if psx_game_serial:
                 title = game_titles.get((psx_game_serial, "PSX"), "Unknown Game")
                 print(f"Found PSX game: {title} ({psx_game_serial})")
@@ -307,7 +329,7 @@ def main():
                 time.sleep(1)
                 continue
             
-            # Try Saturn if PSX fails
+            # Try Saturn only if PSX fails completely
             saturn_game_serial = read_saturn_game_id(drive_path)
             if saturn_game_serial:
                 title = game_titles.get((saturn_game_serial, "SS"), "Unknown Game")

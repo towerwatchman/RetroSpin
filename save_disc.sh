@@ -40,17 +40,49 @@ cleanup() {
 # Trap exit signals
 trap cleanup EXIT INT TERM
 
-# Popup to ask user
-dialog --yesno "RetroSpin\nGame file not found: $TITLE. Save disc as .bin/.cue to USB?" 12 50
-RESPONSE=$?
+# Check for .cue file and corresponding .bin file
+CUE_FILE="$BASE_DIR/$TITLE.cue"
+BIN_FILE="$BASE_DIR/$TITLE.bin"
+SAVE_NEEDED=1
 
-if [ $RESPONSE -eq 0 ]; then  # Yes
-    BIN_FILE="$BASE_DIR/$TITLE.bin"
-    CUE_FILE="$BASE_DIR/$TITLE.cue"
-    TOC_FILE="$BASE_DIR/$TITLE.toc"
-    TEMP_LOG="/tmp/retrospin_cdrdao.log"
-    TEMP_TOC_FILE="/tmp/retrospin_temp.toc"
-    echo "Saving disc to: $BIN_FILE..."
+if [ -f "$CUE_FILE" ]; then
+    if [ -f "$BIN_FILE" ]; then
+        echo "Both .cue and .bin files found: $CUE_FILE, $BIN_FILE"
+        SAVE_NEEDED=0
+    else
+        echo ".cue file found without .bin: $CUE_FILE"
+        dialog --yesno "RetroSpin\n.cue file found for $TITLE, but no .bin file.\nSave disc as .bin/.cue to USB?" 12 50
+        RESPONSE=$?
+        if [ $RESPONSE -ne 0 ]; then
+            echo "User declined to save disc image due to missing .bin"
+            clear
+            exit 0
+        fi
+    fi
+else
+    # Normal prompt for missing game file
+    dialog --yesno "RetroSpin\nGame file not found: $TITLE. Save disc as .bin/.cue to USB?" 12 50
+    RESPONSE=$?
+    if [ $RESPONSE -ne 0 ]; then
+        echo "User declined to save disc image"
+        clear
+        exit 0
+    fi
+fi
+
+if [ $SAVE_NEEDED -eq 1 ]; then
+    clear  # Clear the screen after confirming save
+    echo "Preparing to save disc to: $BIN_FILE..."
+
+    # Delete any existing .cue or partial .bin files
+    if [ -f "$CUE_FILE" ]; then
+        echo "Removing lone .cue file: $CUE_FILE"
+        rm -f "$CUE_FILE"
+    fi
+    if [ -f "$BIN_FILE" ]; then
+        echo "Removing partial .bin file: $BIN_FILE"
+        rm -f "$BIN_FILE"
+    fi
 
     # Verify cdrdao exists
     if [ ! -x "${RIPDISC_PATH}/cdrdao" ]; then
@@ -60,6 +92,8 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
     fi
 
     # Try to get disc size by parsing cdrdao read-toc output
+    TEMP_LOG="/tmp/retrospin_cdrdao.log"
+    TEMP_TOC_FILE="/tmp/retrospin_temp.toc"
     echo "Reading TOC data to detect disc size, logging to $TEMP_LOG..."
     ${RIPDISC_PATH}/cdrdao read-toc --device "$DRIVE_PATH" "$TEMP_TOC_FILE" 2>&1 | tee "$TEMP_LOG"
     CDRDAO_STATUS=$?
@@ -100,15 +134,9 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
     # Show debug info dialog before copying
     dialog --msgbox "RetroSpin\nPreparing to save disc...\nDrive: $DRIVE_PATH\nSystem: $SYSTEM_NAME\nSize: $DISC_SIZE_MB MB\nOutput: $BIN_FILE" 12 70 &
 
-    # Ensure BIN_FILE doesn't exist to start save from 0
-    if [ -f "$BIN_FILE" ]; then
-        echo "Removing existing BIN file: $BIN_FILE"
-        rm -f "$BIN_FILE"
-    fi
-
-    # Start cdrdao in background, redirecting output to /dev/null
+    # Start cdrdao in background, using maximum read speed
     START_TIME=$(date +%s)
-    ${RIPDISC_PATH}/cdrdao read-cd --read-raw --datafile "$BIN_FILE" --device "$DRIVE_PATH" --driver generic-mmc-raw "$TOC_FILE" > /dev/null 2>&1 &
+    ${RIPDISC_PATH}/cdrdao read-cd --read-raw --speed max --datafile "$BIN_FILE" --device "$DRIVE_PATH" --driver generic-mmc-raw "$TOC_FILE" > /dev/null 2>&1 &
 
     # Get cdrdao process ID
     CDRDAO_PID=$!
@@ -184,16 +212,20 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
         # Clean up .toc file
         rm -f "$TOC_FILE"
         FINAL_MESSAGE="Disc saved successfully. Please close this dialog to restart the launcher and load $TITLE."
+
+        # Launch retrospin_launcher.py after successful save
+        echo "Launching RetroSpin launcher..."
+        python3 /media/fat/retrospin/retrospin_launcher.py &
     else
         echo "Error occurred during disc save. Check $BIN_FILE and $TOC_FILE for partial data."
         FINAL_MESSAGE="Disc save failed. Partial data saved at $BIN_FILE. Close to restart launcher."
     fi
     
-    # Prompt user to close and restart launcher
+    # Prompt user to close and restart launcher (for failed saves or user interaction)
     dialog --msgbox "RetroSpin\n$FINAL_MESSAGE" 12 50
     /media/fat/Scripts/retrospin.sh
 else
-    echo "User declined to save disc image"
-    clear
-    exit 0
+    # Both .cue and .bin exist, no save needed
+    echo "No save needed, launching RetroSpin launcher..."
+    python3 /media/fat/retrospin/retrospin_launcher.py &
 fi
