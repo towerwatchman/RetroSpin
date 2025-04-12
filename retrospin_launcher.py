@@ -20,7 +20,7 @@ SATURN_GAME_PATHS = [
 DB_PATH = "/media/fat/retrospin/games.db"
 TMP_MGL_PATH = "/tmp/game.mgl"
 SAVE_SCRIPT = "/media/fat/retrospin/save_disc.sh"
-RIPDISC_PATH = "/media/fat/_Utility"  # Updated path for cdrdao and toc2cue
+RIPDISC_PATH = "/media/fat/_Utility"
 
 def find_core(system):
     """Find the latest core .rbf file for the given system in /media/fat/_Console/."""
@@ -54,7 +54,6 @@ def load_game_titles():
         for row in rows:
             serial, title, system = row
             game_titles[(serial.strip(), system.strip())] = title.strip()
-            print(f"Loaded entry: {serial} -> {title} ({system})")
         print(f"Successfully loaded {len(game_titles)} game titles from {DB_PATH}")
         conn.close()
     except Exception as e:
