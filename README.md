@@ -4,9 +4,9 @@
 
 ## Overview
 
-This project launches games on MiSTer by reading a game_id directly from a game disc and launching that game if it exists. If the game is not located locally, it will prompt you to install it. Game names are checked against the [redump.org](http://redump.org/) database for saving and for launching.
+This project launches disc based games on MiSTer by reading the game_id (or other id) and launching that game if it exists. If the game is not installed/found, the program will prompt you to install it. Game names are checked against a local database that is built from the [redump.org](http://redump.org/) database for saving and for launching. a seperate script is provided to update the database. 
 
-Because we need to create .cue files and access a sqlite3 database. This project relies on two other projects. See Installation below.
+Because we need to create .cue files and access a sqlite3 database, this project relies on two other projects that need to be installed to work. See Installation notes below.
 
 ## Status of Features
 
