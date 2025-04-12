@@ -16,6 +16,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Set up directory structure
         run: |
@@ -86,6 +87,19 @@ jobs:
           name: RetroSpin.db
           path: RetroSpin.db
 
+      - name: Debug repository permissions
+        run: |
+          echo "Git remote URL:"
+          git remote -v
+          echo "Checking branch protections (requires gh CLI):"
+          if command -v gh >/dev/null; then
+            gh api repos/towerwatchman/MiSTer_RetroSpin/branches/main/protection || echo "No gh CLI or no protections"
+          else
+            echo "gh CLI not installed"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Commit retrospin_db.json.zip
         run: |
           git config user.name "GitHub Actions"
@@ -93,7 +107,7 @@ jobs:
           git add -f db/retrospin_db.json.zip
           git add .gitignore
           git commit -m "Update retrospin_db.json.zip and .gitignore"
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/towerwatchman/MiSTer_RetroSpin.git
+          git push
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
