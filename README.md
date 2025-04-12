@@ -36,4 +36,8 @@ Add the following entries to `/media/fat/downloader.ini`:
 db_url = 'https://raw.githubusercontent.com/towerwatchman/MiSTer_Sqlite3/db/db-output/mister_sqlite3_db.json.zip'
 [mister_cdrdao]  
 db_url = 'https://raw.githubusercontent.com/towerwatchman/MiSTer_cdrdao/main/db/mister_cdrdao_db.json.zip'
+[mister_retrospin]
+db_url = https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/db/retrospin_db.json.zip
+post_download = chmod +x /media/fat/retrospin/retrospin_launcher.py /media/fat/retrospin/save_disc.sh /media/fat/Scripts/retrospin.sh; echo '/media/fat/Scripts/retrospin.sh' >> /media/fat/linux/user-startup.sh
+depends = MiSTer_cdrdao
 ```
