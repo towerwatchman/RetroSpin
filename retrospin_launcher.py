@@ -3,6 +3,8 @@ import time
 import re
 import subprocess
 import sqlite3
+from datetime import datetime
+import xml.etree.ElementTree as ET
 
 # MiSTer-specific paths
 MISTER_CMD = "/dev/MiSTer_cmd"
@@ -18,7 +20,7 @@ SATURN_GAME_PATHS = [
 DB_PATH = "/media/fat/retrospin/games.db"
 TMP_MGL_PATH = "/tmp/game.mgl"
 SAVE_SCRIPT = "/media/fat/retrospin/save_disc.sh"
-RIPDISC_PATH = "/media/fat/retrospin/cdrdao"
+RIPDISC_PATH = "/media/fat/_Utility"  # Updated path for cdrdao and toc2cue
 
 def find_core(system):
     """Find the latest core .rbf file for the given system in /media/fat/_Console/."""
@@ -77,12 +79,13 @@ def get_optical_drive():
         return None
 
 def read_psx_game_id(drive_path):
-    """Read PSX game serial from system.cnf, minimizing drive activity."""
+    """Read PSX game serial from system.cnf on physical disc, minimizing drive activity."""
     try:
         mount_point = "/mnt/cdrom"
         if not os.path.exists(mount_point):
             os.makedirs(mount_point)
         
+        # Try mounting as ISO9660
         mount_cmd = f"mount {drive_path} {mount_point} -t iso9660 -o ro"
         mount_result = os.system(mount_cmd)
         if mount_result != 0:
@@ -98,45 +101,52 @@ def read_psx_game_id(drive_path):
             print(f"Successfully mounted {drive_path} with iso9660")
         
         system_cnf_variants = ["system.cnf", "SYSTEM.CNF", "System.cnf"]
-        game_id = None
+        game_serial = None
         for root, dirs, files in os.walk(mount_point):
             for variant in system_cnf_variants:
                 if variant in files:
                     system_cnf_path = os.path.join(root, variant)
-                    with open(system_cnf_path, 'r', encoding='latin-1', errors='ignore') as f:
-                        file_text = f.read()
-                        print(f"Found {variant} at {system_cnf_path}")
-                        for line in file_text.splitlines():
-                            if "BOOT" in line.upper():
-                                raw_id = line.split("=")[1].strip().split("\\")[1].split(";")[0]
-                                game_id = raw_id.replace(".", "").replace("_", "-")
-                                print(f"Extracted PSX Game Serial: {game_id}")
-                                break
-                    if game_id:
+                    try:
+                        with open(system_cnf_path, 'r', encoding='latin-1', errors='ignore') as f:
+                            file_text = f.read()
+                            print(f"Found {variant} at {system_cnf_path}")
+                            for line in file_text.splitlines():
+                                if "BOOT" in line.upper():
+                                    raw_id = line.split("=")[1].strip().split("\\")[1].split(";")[0]
+                                    game_serial = raw_id.replace(".", "").replace("_", "-")
+                                    print(f"Extracted PSX Game Serial: {game_serial}")
+                                    break
+                    except Exception as e:
+                        print(f"Error reading {system_cnf_path}: {e}")
+                    if game_serial:
                         break
-            if game_id:
+            if game_serial:
                 break
         
-        os.system(f"umount {mount_point}")
+        # Unmount immediately
+        os.system(f"umount {mount_point} 2>/dev/null")
         print(f"Unmounted {mount_point}")
         
-        if not game_id:
+        if not game_serial:
             print("system.cnf not found on disc (checked all case variations).")
-        return game_id
+        return game_serial
     except Exception as e:
         print(f"Error reading PSX disc: {e}")
         os.system(f"umount {mount_point} 2>/dev/null")
         return None
 
 def read_saturn_game_id(drive_path):
-    """Read Saturn game serial from disc header at offset 0x20-0x2A."""
+    """Read Saturn game serial from disc header at offset 0x20-0x2A on physical disc."""
     try:
         with open(drive_path, 'rb') as f:
             f.seek(0)  # Sector 0
             sector = f.read(2048)
-            game_id = sector[32:42].decode('ascii', errors='ignore').strip()  # Offset 0x20 to 0x2A
-            print(f"Extracted Saturn Game Serial: {game_id}")
-            return game_id
+            game_serial = sector[32:42].decode('ascii', errors='ignore').strip()  # Offset 0x20-0x2A
+            if not game_serial:
+                print("No valid serial found in disc header.")
+                return None
+            print(f"Extracted Saturn Game Serial: {game_serial}")
+            return game_serial
     except Exception as e:
         print(f"Error reading Saturn disc: {e}")
         return None

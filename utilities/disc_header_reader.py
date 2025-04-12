@@ -1,10 +1,9 @@
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 import os
-import platform
-import glob
-import re
-import subprocess
+import win32api
+import win32file
+import win32con
 
 class DVDHeaderReader:
     def __init__(self, root):
@@ -55,7 +54,7 @@ class DVDHeaderReader:
     def select_dvd(self):
         dvds = self.get_dvd_drives()
         if not dvds:
-            messagebox.showerror("Error", "No DVD drives detected")
+            messagebox.showerror("Error", "No DVD drives detected. Ensure a DVD drive is connected and try running as administrator.")
             return
             
         # Create a new window for DVD selection
@@ -80,39 +79,17 @@ class DVDHeaderReader:
         ttk.Button(dvd_window, text="Select", command=on_dvd_select).pack(pady=5)
         
     def get_dvd_drives(self):
-        system = platform.system()
         drives = []
-        
-        if system == "Windows":
-            try:
-                # Use wmic to get CDROM drives
-                result = subprocess.check_output('wmic cdrom get DeviceID,MediaType', shell=True).decode()
-                for line in result.splitlines():
-                    if 'CD-ROM' in line or 'DVD' in line:
-                        match = re.search(r'\\\\.\\[A-Z]:', line)
-                        if match:
-                            drives.append(match.group(0))
-            except:
-                pass
-                
-        elif system == "Linux":
-            # Look for CD/DVD drives in /dev
-            for dev in glob.glob("/dev/sr*") + glob.glob("/dev/cdrom"):
-                if os.path.exists(dev):
-                    drives.append(dev)
-                    
-        elif system == "Darwin":  # macOS
-            # Look for optical drives
-            try:
-                result = subprocess.check_output(['diskutil', 'list']).decode()
-                for line in result.splitlines():
-                    if 'CD' in line or 'DVD' in line:
-                        match = re.search(r'/dev/disk\d+', line)
-                        if match:
-                            drives.append(match.group(0))
-            except:
-                pass
-                
+        try:
+            # Get all drive letters
+            for drive in win32api.GetLogicalDriveStrings().split('\x00')[:-1]:
+                drive = drive.rstrip('\\')
+                # Check if the drive is a CDROM
+                if win32file.GetDriveType(drive) == win32con.DRIVE_CDROM:
+                    device_path = f"\\\\.\\{drive}"
+                    drives.append(device_path)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to detect DVD drives: {str(e)}")
         return sorted(drives)
             
     def read_header(self, path):
@@ -122,7 +99,8 @@ class DVDHeaderReader:
             
         try:
             with open(path, 'rb') as f:
-                # Read first 1MB (or less if file is smaller)
+                # Seek to start and read first 1MB
+                f.seek(0)
                 data = f.read(1024 * 1024)
                 total_bytes = len(data)
                 
@@ -138,7 +116,9 @@ class DVDHeaderReader:
                 self.total_label.config(text=f"Total: {total_bytes} bytes")
                 
         except PermissionError:
-            messagebox.showerror("Error", "Permission denied. Try running as administrator/root.")
+            messagebox.showerror("Error", "Permission denied. Please run the program as administrator.")
+        except FileNotFoundError:
+            messagebox.showerror("Error", f"Device or file not found: {path}. Ensure a disc is inserted.")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to read: {str(e)}")
 
