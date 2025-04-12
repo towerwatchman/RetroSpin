@@ -63,6 +63,14 @@ jobs:
         run: |
           zip -j db/retrospin_db.json.zip retrospin_db.json
 
+      - name: Update .gitignore to allow db/retrospin_db.json.zip
+        run: |
+          if [ -f .gitignore ]; then
+            grep -q '^!db/retrospin_db.json.zip$' .gitignore || echo '!db/retrospin_db.json.zip' >> .gitignore
+          else
+            echo '!db/retrospin_db.json.zip' > .gitignore
+          fi
+
       - name: Create RetroSpin.db
         run: |
           cd dist
@@ -76,12 +84,13 @@ jobs:
           name: RetroSpin.db
           path: RetroSpin.db
 
-      - name: Upload retrospin_db.json.zip to db/
+      - name: Commit retrospin_db.json.zip
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add db/retrospin_db.json.zip
-          git commit -m "Update retrospin_db.json.zip"
+          git add -f db/retrospin_db.json.zip
+          git add .gitignore
+          git commit -m "Update retrospin_db.json.zip and .gitignore"
           git push
 
       - name: Create Release
