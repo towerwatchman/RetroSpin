@@ -16,7 +16,7 @@ ________________________________________________________________________________
 - [x] Sega Saturn | 2047 Games
 - [x] Sega Mega CD & Sega CD | 393 Games
 - [ ] Sega 32X CD                                   
-- [ ] Neo Geo CD | 133 Games
+- [ ] Neo Geo CD | 53 Games
 - [ ] NEC PC Engine CD & TurboGrafx CD
 - [ ] Philips CD-i
 - [ ] Panasonic 3DO Interactive Multiplayer
