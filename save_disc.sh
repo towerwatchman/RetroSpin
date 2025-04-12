@@ -18,7 +18,7 @@ RIPDISC_PATH="/media/fat/_Utility"
 mkdir -p "$BASE_DIR"
 
 # Popup to ask user
-dialog --yesno "\Zb\Z1RetroSpin\Zn\nGame file not found: $TITLE. Save disc as .bin/.cue to USB?" 10 50
+dialog --yesno "RetroSpin\nGame file not found: $TITLE. Save disc as .bin/.cue to USB?" 10 50
 RESPONSE=$?
 
 if [ $RESPONSE -eq 0 ]; then  # Yes
@@ -31,34 +31,61 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
     DISC_SIZE=$(blockdev --getsize64 "$DRIVE_PATH" 2>/dev/null || echo $((700 * 1024 * 1024)))
     echo "Disc size detected: $DISC_SIZE bytes"
 
-    # Estimate time (assuming 2.4 MB/s read rate)
-    READ_RATE=2457600  # 2.4 MB/s in bytes
-    ESTIMATED_SECONDS=$((DISC_SIZE / READ_RATE))
-    ESTIMATED_MINUTES=$((ESTIMATED_SECONDS / 60))
-    ESTIMATED_REMAINDER=$((ESTIMATED_SECONDS % 60))
-    echo "Estimated save time: $ESTIMATED_MINUTES minutes $ESTIMATED_REMAINDER seconds"
+    # Convert sizes to MB for display
+    DISC_SIZE_MB=$(echo "scale=1; $DISC_SIZE / 1024 / 1024" | bc)
 
     # Start cdrdao in background, redirecting output to /dev/null
+    START_TIME=$(date +%s)
     ${RIPDISC_PATH}/cdrdao read-cd --read-raw --datafile "$BIN_FILE" --device "$DRIVE_PATH" --driver generic-mmc-raw "$TOC_FILE" > /dev/null 2>&1 &
 
     # Get cdrdao process ID
     CDRDAO_PID=$!
 
-    # Progress gauge with RetroSpin in red
+    # Progress gauge with dynamic time, size, and transfer rate
     (
         while kill -0 $CDRDAO_PID 2>/dev/null; do
             if [ -f "$BIN_FILE" ]; then
                 CURRENT_SIZE=$(stat -c %s "$BIN_FILE" 2>/dev/null || echo 0)
+                CURRENT_SIZE_MB=$(echo "scale=1; $CURRENT_SIZE / 1024 / 1024" | bc)
                 PERCENT=$((CURRENT_SIZE * 100 / DISC_SIZE))
                 if [ $PERCENT -gt 100 ]; then PERCENT=100; fi
+
+                # Calculate elapsed time and estimate remaining time
+                CURRENT_TIME=$(date +%s)
+                ELAPSED_SECONDS=$((CURRENT_TIME - START_TIME))
+                if [ $CURRENT_SIZE -gt 0 ] && [ $ELAPSED_SECONDS -gt 0 ]; then
+                    # Calculate actual read rate (bytes/sec)
+                    READ_RATE=$((CURRENT_SIZE / ELAPSED_SECONDS))
+                    # Calculate transfer rate in MB/s
+                    TRANSFER_RATE_MB=$(echo "scale=1; $READ_RATE / 1024 / 1024" | bc)
+                    if [ $READ_RATE -gt 0 ]; then
+                        REMAINING_BYTES=$((DISC_SIZE - CURRENT_SIZE))
+                        ESTIMATED_SECONDS=$((REMAINING_BYTES / READ_RATE))
+                        ESTIMATED_MINUTES=$((ESTIMATED_SECONDS / 60))
+                        ESTIMATED_REMAINDER=$((ESTIMATED_SECONDS % 60))
+                    else
+                        ESTIMATED_MINUTES=0
+                        ESTIMATED_REMAINDER=0
+                        TRANSFER_RATE_MB="0.0"
+                    fi
+                else
+                    # Fallback estimate (2.4 MB/s = 2457600 bytes/s)
+                    READ_RATE=2457600
+                    TRANSFER_RATE_MB="2.4"
+                    REMAINING_BYTES=$((DISC_SIZE - CURRENT_SIZE))
+                    ESTIMATED_SECONDS=$((REMAINING_BYTES / READ_RATE))
+                    ESTIMATED_MINUTES=$((ESTIMATED_SECONDS / 60))
+                    ESTIMATED_REMAINDER=$((ESTIMATED_SECONDS % 60))
+                fi
+
                 echo "XXX"
                 echo "$PERCENT"
-                echo -e "\Zb\Z1RetroSpin\Zn\nSaving $TITLE... $PERCENT% complete\nEstimated time: $ESTIMATED_MINUTES min $ESTIMATED_REMAINDER sec"
+                echo -e "RetroSpin\nSaving $TITLE... $PERCENT% complete\nSaved: $CURRENT_SIZE_MB MB / $DISC_SIZE_MB MB\nEstimated time remaining: $ESTIMATED_MINUTES min $ESTIMATED_REMAINDER sec\nTransfer rate: $TRANSFER_RATE_MB MB/s"
                 echo "XXX"
             fi
             sleep 10  # Update every 10 seconds
         done
-    ) | dialog --gauge "\Zb\Z1RetroSpin\Zn" 10 50 0
+    ) | dialog --gauge "RetroSpin" 10 70 0
 
     # Wait for cdrdao to finish and check status
     wait $CDRDAO_PID
@@ -80,7 +107,7 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
     fi
     
     # Prompt user to close and restart launcher
-    dialog --msgbox "\Zb\Z1RetroSpin\Zn\n$FINAL_MESSAGE" 10 50
+    dialog --msgbox "RetroSpin\n$FINAL_MESSAGE" 10 50
     /media/fat/Scripts/retrospin.sh
 else
     echo "User declined to save disc image"
