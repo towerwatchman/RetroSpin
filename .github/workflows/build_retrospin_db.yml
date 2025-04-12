@@ -42,23 +42,51 @@ jobs:
           cat << EOF > retrospin_db.json
           {
             "db_id": "mister_retrospin",
+            "timestamp": $(date +%s),
             "files": {
               "media/fat/retrospin/retrospin_launcher.py": {
-                "hash": "$(sha256sum dist/media/fat/retrospin/retrospin_launcher.py | cut -d' ' -f1)",
-                "chmod": "0755"
+                "hash": "$(md5sum dist/media/fat/retrospin/retrospin_launcher.py | cut -d' ' -f1)",
+                "size": $(wc -c < dist/media/fat/retrospin/retrospin_launcher.py),
+                "url": "https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/retrospin_launcher.py",
+                "tags": ["retrospin", "utility"],
+                "overwrite": true,
+                "reboot": false
               },
               "media/fat/retrospin/save_disc.sh": {
-                "hash": "$(sha256sum dist/media/fat/retrospin/save_disc.sh | cut -d' ' -f1)",
-                "chmod": "0755"
+                "hash": "$(md5sum dist/media/fat/retrospin/save_disc.sh | cut -d' ' -f1)",
+                "size": $(wc -c < dist/media/fat/retrospin/save_disc.sh),
+                "url": "https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/save_disc.sh",
+                "tags": ["retrospin", "utility"],
+                "overwrite": true,
+                "reboot": false
               },
               "media/fat/Scripts/retrospin.sh": {
-                "hash": "$(sha256sum dist/media/fat/Scripts/retrospin.sh | cut -d' ' -f1)",
-                "chmod": "0755"
+                "hash": "$(md5sum dist/media/fat/Scripts/retrospin.sh | cut -d' ' -f1)",
+                "size": $(wc -c < dist/media/fat/Scripts/retrospin.sh),
+                "url": "https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/retrospin.sh",
+                "tags": ["retrospin", "utility"],
+                "overwrite": true,
+                "reboot": false
               },
               "media/fat/retrospin/games.db": {
-                "hash": "$(sha256sum dist/media/fat/retrospin/games.db | cut -d' ' -f1)",
-                "chmod": "0644"
+                "hash": "$(md5sum dist/media/fat/retrospin/games.db | cut -d' ' -f1)",
+                "size": $(wc -c < dist/media/fat/retrospin/games.db),
+                "url": "https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/games.db",
+                "tags": ["retrospin", "utility"],
+                "overwrite": true,
+                "reboot": false
               }
+            },
+            "folders": {
+              "media/fat/retrospin/": {
+                "tags": ["retrospin"]
+              },
+              "media/fat/Scripts/": {
+                "tags": ["retrospin"]
+              }
+            },
+            "default_options": {
+              "filter": "retrospin"
             }
           }
           EOF
