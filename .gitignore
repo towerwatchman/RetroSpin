@@ -162,5 +162,4 @@ cython_debug/
 #redump files
 *.zip
 *.dat
-*.db
 DATA
