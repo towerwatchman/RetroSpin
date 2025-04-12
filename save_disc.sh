@@ -11,7 +11,7 @@ USB_SATURN_PATH="/media/usb0/games/Saturn"
 USB_MCD_PATH="/media/usb0/games/MegaCD"
 BASE_DIR="$USB_SATURN_PATH"
 SYSTEM_NAME="Sega Saturn"
-if [ "$SYSTEM" == "PSX" ]; then
+if [ "$SYSTEM" == "psx" ]; then
     BASE_DIR="$USB_PSX_PATH"
     SYSTEM_NAME="Sony PlayStation"
 elif [ "$SYSTEM" == "mcd" ]; then
@@ -55,7 +55,7 @@ if [ -f "$CUE_FILE" ]; then
         SAVE_NEEDED=0
     else
         echo ".cue file found without .bin: $CUE_FILE"
-        dialog --yesno "RetroSpin\n.cue file found for $TITLE, but no .bin file.\nSave disc as .bin/.cue to USB?" 12 50
+        dialog --yesno "RetroSpin\n.cue file found for $TITLE, but no .bin file.\nSave#pragma once disc as .bin/.cue to USB?" 12 50
         RESPONSE=$?
         if [ $RESPONSE -ne 0 ]; then
             echo "User declined to save disc image due to missing .bin"
@@ -76,7 +76,7 @@ fi
 
 if [ $SAVE_NEEDED -eq 1 ]; then
     clear  # Clear the screen after confirming save
-    echo "Preparing to save disc to: $BIN_FILE..."
+    echo "Preparing to save disc to: $CUE_FILE, $BIN_FILE..."
 
     # Delete any existing .cue or partial .bin files
     if [ -f "$CUE_FILE" ]; then
@@ -97,9 +97,9 @@ if [ $SAVE_NEEDED -eq 1 ]; then
 
     # Try to get disc size by parsing cdrdao read-toc output
     TEMP_LOG="/tmp/retrospin_cdrdao.log"
-    TEMP_TOC_FILE="/tmp/retrospin_temp.toc"
+    TOC_FILE="/tmp/retrospin_temp.toc"
     echo "Reading TOC data to detect disc size, logging to $TEMP_LOG..."
-    ${RIPDISC_PATH}/cdrdao read-toc --device "$DRIVE_PATH" "$TEMP_TOC_FILE" 2>&1 | tee "$TEMP_LOG"
+    ${RIPDISC_PATH}/cdrdao read-toc --device "$DRIVE_PATH" "$TOC_FILE" 2>&1 | tee "$TEMP_LOG"
     CDRDAO_STATUS=$?
     if [ -f "$TEMP_LOG" ]; then
         # Parse leadout sector count from output (e.g., "Leadout ... (211574)")
@@ -136,13 +136,11 @@ if [ $SAVE_NEEDED -eq 1 ]; then
     DISC_SIZE_MB=$(echo "scale=1; $DISC_SIZE / 1024 / 1024" | bc)
 
     # Show debug info dialog before copying
-    dialog --msgbox "RetroSpin\nPreparing to save disc...\nDrive: $DRIVE_PATH\nSystem: $SYSTEM_NAME\nSize: $DISC_SIZE_MB MB\nOutput: $BIN_FILE" 12 70 &
+    dialog --msgbox "RetroSpin\nPreparing to save disc...\nDrive: $DRIVE_PATH\nSystem: $SYSTEM_NAME\nSize: $DISC_SIZE_MB MB\nOutput: $CUE_FILE" 12 70 &
 
     # Start cdrdao in background, using maximum read speed
     START_TIME=$(date +%s)
     ${RIPDISC_PATH}/cdrdao read-cd --read-raw --speed max --datafile "$BIN_FILE" --device "$DRIVE_PATH" --driver generic-mmc-raw "$TOC_FILE" > /dev/null 2>&1 &
-
-    # Get cdrdao process ID
     CDRDAO_PID=$!
 
     # Wait for copying to start or timeout
@@ -208,28 +206,49 @@ if [ $SAVE_NEEDED -eq 1 ]; then
     if [ $CDRDAO_STATUS -eq 0 ]; then
         echo "Save to USB complete"
 
-        # Convert .toc to .cue with only filename
-        ${RIPDISC_PATH}/toc2cue "$TOC_FILE" "$CUE_FILE" > /dev/null 2>&1
-        sed -i "s|$BIN_FILE|$TITLE.bin|g" "$CUE_FILE"  # Replace full path with just filename
-        echo "Converted .toc to .cue: $CUE_FILE"
+        # Convert .toc to .cue
+        if [ -f "$TOC_FILE" ]; then
+            echo "Converting .toc to .cue: $CUE_FILE"
+            ${RIPDISC_PATH}/toc2cue "$TOC_FILE" "$CUE_FILE" > /dev/null 2>&1
+            if [ -f "$CUE_FILE" ]; then
+                sed -i "s|$BIN_FILE|$TITLE.bin|g" "$CUE_FILE"  # Replace full path with filename
+                echo "Successfully created .cue file: $CUE_FILE"
+            else
+                echo "Error: Failed to create .cue file: $CUE_FILE"
+                dialog --msgbox "RetroSpin\nError: Failed to create .cue file\n.bin file saved at $BIN_FILE" 12 70
+                rm -f "$TOC_FILE"
+                exit 1
+            fi
+            # Clean up .toc file
+            rm -f "$TOC_FILE"
+            echo "Removed temporary .toc file: $TOC_FILE"
+        else
+            echo "Error: .toc file missing after cdrdao: $TOC_FILE"
+            dialog --msgbox "RetroSpin\nError: .toc file missing\n.bin file saved at $BIN_FILE" 12 70
+            exit 1
+        fi
 
-        # Clean up .toc file
-        rm -f "$TOC_FILE"
-        FINAL_MESSAGE="Disc saved successfully. Please close this dialog to restart the launcher and load $TITLE."
-
-        # Launch retrospin_launcher.py after successful save
-        echo "Launching RetroSpin launcher..."
-        python3 /media/fat/retrospin/retrospin_launcher.py &
+        # Verify both files exist
+        if [ -f "$CUE_FILE" ] && [ -f "$BIN_FILE" ]; then
+            echo "Successfully saved $CUE_FILE and $BIN_FILE"
+            FINAL_MESSAGE="Disc saved successfully. Please close this dialog to restart the launcher and load $TITLE."
+        else
+            echo "Error: Missing .cue or .bin file after save"
+            FINAL_MESSAGE="Disc save incomplete. Check $CUE_FILE and $BIN_FILE."
+        fi
     else
         echo "Error occurred during disc save. Check $BIN_FILE and $TOC_FILE for partial data."
-        FINAL_MESSAGE="Disc save failed. Partial data saved at $BIN_FILE. Close to restart launcher."
+        FINAL_MESSAGE="Disc save failed. Partial data may be at $BIN_FILE. Close to restart launcher."
     fi
     
-    # Prompt user to close and restart launcher (for failed saves or user interaction)
+    # Prompt user to close and restart launcher
     dialog --msgbox "RetroSpin\n$FINAL_MESSAGE" 12 50
-    /media/fat/Scripts/retrospin.sh
 else
     # Both .cue and .bin exist, no save needed
-    echo "No save needed, launching RetroSpin launcher..."
-    python3 /media/fat/retrospin/retrospin_launcher.py &
+    echo "No save needed, exiting..."
 fi
+
+# Restart launcher via retrospin.sh
+echo "Restarting RetroSpin launcher via retrospin.sh..."
+/media/fat/Scripts/retrospin.sh
+exit 0
