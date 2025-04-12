@@ -8,8 +8,8 @@ import requests
 import os
 from datetime import datetime
 import zipfile
-import tempfile
 import glob
+import tempfile
 
 # URL for PSX Redump DAT file
 REDUMP_URL = "http://redump.org/datfile/psx/"
@@ -58,13 +58,13 @@ LANGUAGE_MAP = {
 }
 
 def download_redump_dat():
-    """Download the latest PSX Redump DAT file and return its local path."""
+    """Download the latest PSX Redump DAT zip file, extract the .dat, and return its path."""
     try:
         print(f"Fetching Redump DAT file from {REDUMP_URL}...")
         response = requests.get(REDUMP_URL, timeout=10)
         response.raise_for_status()
         
-        # Extract filename from Content-Disposition or URL
+        # Extract filename from Content-Disposition or use default
         filename = None
         if 'Content-Disposition' in response.headers:
             disposition = response.headers['Content-Disposition']
@@ -78,34 +78,34 @@ def download_redump_dat():
         zip_path = filename
         with open(zip_path, 'wb') as f:
             f.write(response.content)
-        print(f"Saved Redump DAT file to {zip_path}")
+        print(f"Saved Redump zip file to {zip_path}")
         
-        # Extract the zip file
+        # Extract the .dat file
         with tempfile.TemporaryDirectory() as temp_dir:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_dir)
                 print(f"Extracted zip file to temporary directory: {temp_dir}")
             
-            # Find the XML file
-            xml_files = glob.glob(os.path.join(temp_dir, "*.xml"))
-            if not xml_files:
-                raise ValueError("No XML file found in the downloaded zip")
-            if len(xml_files) > 1:
-                print(f"Warning: Multiple XML files found, using the first: {xml_files[0]}")
-            xml_path = xml_files[0]
+            # Find the .dat file
+            dat_files = glob.glob(os.path.join(temp_dir, "*.dat"))
+            if not dat_files:
+                raise ValueError("No .dat file found in the downloaded zip")
+            if len(dat_files) > 1:
+                print(f"Warning: Multiple .dat files found, using the first: {dat_files[0]}")
+            dat_path = dat_files[0]
             
-            # Read the XML content
-            with open(xml_path, 'rb') as f:
-                xml_content = f.read()
+            # Read the .dat content
+            with open(dat_path, 'rb') as f:
+                dat_content = f.read()
             
-            # Save XML content to a local file for parsing
-            xml_filename = os.path.basename(xml_path)
-            local_xml_path = xml_filename
-            with open(local_xml_path, 'wb') as f:
-                f.write(xml_content)
-            print(f"Saved extracted XML to {local_xml_path}")
+            # Save .dat content to a local file for parsing
+            dat_filename = os.path.basename(dat_path)
+            local_dat_path = dat_filename
+            with open(local_dat_path, 'wb') as f:
+                f.write(dat_content)
+            print(f"Saved extracted DAT file to {local_dat_path}")
             
-            return local_xml_path
+            return local_dat_path
     
     except requests.RequestException as e:
         print(f"Error downloading Redump DAT file: {e}")
@@ -114,7 +114,7 @@ def download_redump_dat():
         print(f"Error: Downloaded file is not a valid zip")
         return None
     except Exception as e:
-        print(f"Error extracting zip file: {e}")
+        print(f"Error extracting DAT file: {e}")
         return None
 
 def connect_to_database():
@@ -124,7 +124,7 @@ def connect_to_database():
     return conn, cursor
 
 def ensure_table_schema(cursor):
-    """Ensure games table exists with correct schema."""
+    """Ensure games and missing_games tables exist with correct schema."""
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS games (
             game_id TEXT,
@@ -134,6 +134,15 @@ def ensure_table_schema(cursor):
             language TEXT,
             updated_from_redump TEXT,
             PRIMARY KEY (game_id, system)
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS missing_games (
+            title TEXT,
+            region TEXT,
+            language TEXT,
+            redump_full_title TEXT,
+            timestamp TEXT
         )
     ''')
 
@@ -159,7 +168,7 @@ def extract_region_and_language(redump_title):
     return title, region, language, redump_title
 
 def parse_redump_xml(file_path):
-    """Parse Redump XML and return list of (game_id, title, region, language, full_title)."""
+    """Parse Redump DAT (XML) and return list of (title, region, language, full_title)."""
     redump_data = []
     try:
         tree = ET.parse(file_path)
@@ -167,12 +176,8 @@ def parse_redump_xml(file_path):
         
         for game in root.findall("game"):
             full_title = game.get("name")
-            serial_elem = game.find("serial")
-            game_id = serial_elem.text.strip() if serial_elem is not None else None
-            if game_id:
-                game_id = game_id.replace(",", ", ")
             title, region, language, redump_full_title = extract_region_and_language(full_title)
-            redump_data.append((game_id, title, region, language, redump_full_title))
+            redump_data.append((title, region, language, redump_full_title))
         
         return redump_data
     
@@ -181,39 +186,73 @@ def parse_redump_xml(file_path):
         return []
 
 def fuzzy_match_titles(redump_title, redump_region, redump_language, db_titles):
-    """Find matches for a Redump title, returning list of (db_id, db_title, score)."""
+    """Find matches for a Redump title, considering region and language."""
     matches = []
-    for (db_id, db_system), db_title in db_titles.items():
+    for (db_id, db_system), (db_title, db_region, db_language) in db_titles.items():
         if db_system != "PSX":
             continue
         db_clean_title = re.sub(r'\s*\((?!Disc\s*\d+\b)[^)]+\)', '', db_title).strip()
-        score = fuzz.token_sort_ratio(redump_title, db_clean_title)
-        if score >= PROMPT_MATCH_THRESHOLD:
-            matches.append((db_id, db_title, score))
+        title_score = fuzz.token_sort_ratio(redump_title, db_clean_title)
+        
+        # Region score: 10 points if exact match, 0 otherwise
+        region_score = 10 if redump_region == db_region and redump_region != "Unknown" else 0
+        
+        # Language score: proportional to overlap (max 10 points)
+        redump_langs = set(redump_language.split(", ")) if redump_language != "Unknown" else set()
+        db_langs = set(db_language.split(", ")) if db_language != "Unknown" else set()
+        lang_overlap = len(redump_langs.intersection(db_langs))
+        lang_total = max(len(redump_langs), len(db_langs), 1)
+        language_score = (lang_overlap / lang_total) * 10
+        
+        # Combined score: title (80%) + region (10%) + language (10%)
+        total_score = title_score * 0.8 + region_score + language_score
+        
+        if total_score >= PROMPT_MATCH_THRESHOLD:
+            matches.append((db_id, db_title, total_score))
+    
     matches.sort(key=lambda x: x[2], reverse=True)
     return matches
 
 def prompt_user_for_match(redump_title, matches):
-    """Show GUI dialog to select the correct match or 'No Match'."""
+    """Show GUI dialog with scrollable list to select the correct match or 'No Match'."""
     root = tk.Tk()
     root.title("Select Game Match")
     root.geometry("600x400")
     
     tk.Label(root, text=f"Select the best match for Redump title: '{redump_title}'", wraplength=550).pack(pady=10)
     
+    # Create scrollable frame
+    canvas = tk.Canvas(root)
+    scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
+    scrollable_frame = ttk.Frame(canvas)
+    
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+    
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    scrollbar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    
     selected_match = tk.StringVar(value="No Match")
     
-    frame = ttk.Frame(root)
-    frame.pack(fill="both", expand=True, padx=10, pady=10)
-    
-    tk.Radiobutton(frame, text="No Match", variable=selected_match, value="No Match").pack(anchor="w")
+    tk.Radiobutton(scrollable_frame, text="No Match", variable=selected_match, value="No Match").pack(anchor="w")
     for i, (db_id, db_title, score) in enumerate(matches):
-        tk.Radiobutton(frame, text=f"{db_title} (ID: {db_id}, Score: {score:.1f})", variable=selected_match, value=str(i)).pack(anchor="w")
+        tk.Radiobutton(scrollable_frame, text=f"{db_title} (ID: {db_id}, Score: {score:.1f})", variable=selected_match, value=str(i)).pack(anchor="w")
     
     def submit():
         root.quit()
     
     ttk.Button(root, text="Submit", command=submit).pack(pady=10)
+    
+    # Enable mouse wheel scrolling
+    def on_mouse_wheel(event):
+        canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    
+    canvas.bind_all("<MouseWheel>", on_mouse_wheel)
     
     root.mainloop()
     choice = selected_match.get()
@@ -224,7 +263,7 @@ def prompt_user_for_match(redump_title, matches):
     return matches[int(choice)]
 
 def update_database_with_redump():
-    """Download Redump DAT and update games.db, auto-matching >=85%, prompting for 50-85%."""
+    """Download Redump DAT zip, extract .dat, and update games.db."""
     redump_file = download_redump_dat()
     if not redump_file:
         print("Failed to download or extract Redump DAT file. Exiting.")
@@ -238,21 +277,17 @@ def update_database_with_redump():
     conn, cursor = connect_to_database()
     ensure_table_schema(cursor)
     
-    cursor.execute("SELECT game_id, title, system FROM games WHERE system = 'PSX'")
-    db_titles = {(row[0], row[2]): row[1] for row in cursor.fetchall()}
+    cursor.execute("SELECT game_id, title, region, language, system FROM games WHERE system = 'PSX'")
+    db_titles = {(row[0], row[4]): (row[1], row[2], row[3]) for row in cursor.fetchall()}
     
     auto_updated = 0
     user_updated = 0
     no_match = 0
     
-    for game_id, clean_title, region, language, full_title in redump_data:
-        if not game_id:
-            print(f"Skipping Redump entry with no ID: {full_title}")
-            continue
-        
-        existing_title = db_titles.get((game_id, "PSX"))
-        if existing_title == full_title:
-            print(f"Skipping unchanged entry: {game_id} = {full_title}")
+    for clean_title, region, language, full_title in redump_data:
+        existing_titles = [db_title for (db_id, db_system), (db_title, _, _) in db_titles.items() if db_system == "PSX"]
+        if full_title in existing_titles:
+            print(f"Skipping unchanged entry: {full_title}")
             continue
         
         matches = fuzzy_match_titles(clean_title, region, language, db_titles)
@@ -266,7 +301,7 @@ def update_database_with_redump():
             auto_updated += 1
             print(f"Auto-updated {db_id}: '{db_title}' -> '{full_title}' (Region: {region}, Score: {score:.1f})")
         elif matches and matches[0][2] >= PROMPT_MATCH_THRESHOLD:
-            print(f"Prompting for Redump title: {full_title} (ID: {game_id})")
+            print(f"Prompting for Redump title: {full_title}")
             match = prompt_user_for_match(full_title, matches)
             if match:
                 db_id, db_title, score = match
@@ -279,22 +314,36 @@ def update_database_with_redump():
                 print(f"User-updated {db_id}: '{db_title}' -> '{full_title}' (Region: {region}, Score: {score:.1f})")
             else:
                 no_match += 1
-                print(f"No match selected for {full_title} (ID: {game_id})")
+                print(f"No match selected for {full_title}")
+                cursor.execute('''
+                    INSERT INTO missing_games (title, region, language, redump_full_title, timestamp)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (clean_title, region, language, full_title, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                print(f"Added to missing_games: {full_title}")
         else:
             no_match += 1
-            print(f"No suitable match for {full_title} (ID: {game_id}, Best Score: {matches[0][2] if matches else 0:.1f})")
+            print(f"No suitable match for {full_title} (Best Score: {matches[0][2] if matches else 0:.1f})")
+            cursor.execute('''
+                INSERT INTO missing_games (title, region, language, redump_full_title, timestamp)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (clean_title, region, language, full_title, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+            print(f"Added to missing_games: {full_title}")
     
     conn.commit()
     print(f"\nAuto-updated {auto_updated} games.")
     print(f"User-updated {user_updated} games.")
-    print(f"No match for {no_match} games.")
+    print(f"No match for {no_match} games (added to missing_games).")
     
-    test_ids = ["SLUS-00515"]
-    for test_id in test_ids:
-        cursor.execute("SELECT title, region, system, language, updated_from_redump FROM games WHERE game_id = ? AND system = 'PSX'", (test_id,))
+    test_titles = ["Codemasters Demo Disk (Europe)"]
+    for test_title in test_titles:
+        cursor.execute("SELECT game_id, title, region, system, language, updated_from_redump FROM games WHERE title = ? AND system = 'PSX'", (test_title,))
         result = cursor.fetchone()
         if result:
-            print(f"Test: {test_id} = {result[0]} ({result[1]}, {result[2]}, Language: {result[3]}, Updated: {result[4]})")
+            print(f"Test (games): {result[0]} = {result[1]} ({result[2]}, {result[3]}, Language: {result[4]}, Updated: {result[5]})")
+        cursor.execute("SELECT title, region, language, redump_full_title FROM missing_games WHERE redump_full_title = ?", (test_title,))
+        result = cursor.fetchone()
+        if result:
+            print(f"Test (missing_games): {result[3]} (Region: {result[1]}, Language: {result[2]})")
     
     conn.close()
 
