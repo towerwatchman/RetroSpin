@@ -262,7 +262,7 @@ def main():
     game_titles = load_game_titles()
     
     psx_core = find_core("PSX")
-    saturn_core = find_core("SATURN")
+    saturn_core = find_core("SS")
     if not psx_core and not saturn_core:
         show_popup("No PSX or Saturn cores found in /media/fat/_Console/.")
         print("Cannot proceed without cores. Exiting...")
@@ -298,14 +298,14 @@ def main():
         # Try Saturn if PSX fails
         saturn_game_serial = read_saturn_game_id(drive_path)
         if saturn_game_serial:
-            if (saturn_game_serial, "SATURN") != last_game_serial:
-                title = game_titles.get((saturn_game_serial, "SATURN"), "Unknown Game")
+            if (saturn_game_serial, "SS") != last_game_serial:
+                title = game_titles.get((saturn_game_serial, "SS"), "Unknown Game")
                 print(f"Found Saturn game: {title} ({saturn_game_serial})")
                 if saturn_core:
-                    launch_game_on_mister(saturn_game_serial, title, saturn_core, "SATURN", drive_path)
+                    launch_game_on_mister(saturn_game_serial, title, saturn_core, "SS", drive_path)
                 else:
                     print("No Saturn core available to launch game")
-                last_game_serial = (saturn_game_serial, "SATURN")
+                last_game_serial = (saturn_game_serial, "SS")
             else:
                 print(f"Saturn game {saturn_game_serial} already launched. Waiting for new disc...")
         else:
