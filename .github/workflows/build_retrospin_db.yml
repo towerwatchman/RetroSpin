@@ -1,0 +1,62 @@
+name: Build and Release RetroSpin.db
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up directory structure
+        run: |
+          mkdir -p dist/media/fat/retrospin
+          mkdir -p dist/media/fat/Scripts
+
+      - name: Copy RetroSpin files
+        run: |
+          cp retrospin_launcher.py dist/media/fat/retrospin/
+          cp save_disc.sh dist/media/fat/retrospin/
+          cp retrospin.sh dist/media/fat/Scripts/
+          cp games.db dist/media/fat/retrospin/
+
+      - name: Set executable permissions
+        run: |
+          chmod +x dist/media/fat/retrospin/retrospin_launcher.py
+          chmod +x dist/media/fat/retrospin/save_disc.sh
+          chmod +x dist/media/fat/Scripts/retrospin.sh
+
+      - name: Create RetroSpin.db
+        run: |
+          cd dist
+          tar -cvf RetroSpin.db media
+          mv RetroSpin.db ../
+          cd ..
+
+      - name: Upload RetroSpin.db artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RetroSpin.db
+          path: RetroSpin.db
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RetroSpin.db
+          name: RetroSpin ${{ github.ref_name }}
+          body: |
+            RetroSpin distribution for MiSTer FPGA.
+            Includes retrospin_launcher.py, save_disc.sh, retrospin.sh, and games.db.
+            Requires cdrdao and toc2cue installed separately in /media/fat/_Utility/.
+            Install via MiSTer Downloader or manually extract to /media/fat/.
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
