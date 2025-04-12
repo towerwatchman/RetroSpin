@@ -2,8 +2,7 @@ import os
 import time
 import re
 import subprocess
-import csv
-import xml.etree.ElementTree as ET
+import sqlite3
 
 # MiSTer-specific paths
 MISTER_CMD = "/dev/MiSTer_cmd"
@@ -16,7 +15,7 @@ SATURN_GAME_PATHS = [
     "/media/fat/games/Saturn/",
     "/media/usb0/games/Saturn/"
 ]
-CSV_PATH = "/media/fat/retrospin/games.csv"
+DB_PATH = "/media/fat/retrospin/games.db"
 TMP_MGL_PATH = "/tmp/game.mgl"
 SAVE_SCRIPT = "/media/fat/retrospin/save_disc.sh"
 RIPDISC_PATH = "/media/fat/retrospin/cdrdao"
@@ -43,30 +42,21 @@ def find_core(system):
         return None
 
 def load_game_titles():
-    """Load game ID to title mapping from CSV."""
+    """Load game serial to title and system mapping from SQLite database."""
     game_titles = {}
     try:
-        with open(CSV_PATH, 'r', encoding='utf-8') as f:
-            reader = csv.reader(f)
-            header = next(reader)  # Skip header
-            print(f"CSV Header: {header}")
-            for row in reader:
-                if len(row) >= 4:  # Minimum required: game_id, title, region, system
-                    game_id, title = row[0].strip(), row[1].strip()
-                    system = row[3].strip() if len(row) > 3 else "Unknown"
-                    key = (game_id, system)
-                    game_titles[key] = title
-                    # Debug: Log specific ID if present
-                    if game_id == "SLUS-00515":
-                        print(f"Loaded PSX entry: {key} -> {title}")
-            print(f"Successfully loaded {len(game_titles)} game titles from {CSV_PATH}")
-            # Debug: Check if SLUS-00515 is in the loaded titles
-            if ('SLUS-00515', 'PSX') in game_titles:
-                print(f"Confirmed: SLUS-00515 mapped to {game_titles[('SLUS-00515', 'PSX')]}")
-            else:
-                print("Warning: SLUS-00515 not found in loaded titles with system 'PSX'")
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT serial, title, system FROM games")
+        rows = cursor.fetchall()
+        for row in rows:
+            serial, title, system = row
+            game_titles[(serial.strip(), system.strip())] = title.strip()
+            print(f"Loaded entry: {serial} -> {title} ({system})")
+        print(f"Successfully loaded {len(game_titles)} game titles from {DB_PATH}")
+        conn.close()
     except Exception as e:
-        print(f"Error loading game titles from CSV: {e}")
+        print(f"Error loading game titles from database: {e}")
     return game_titles
 
 def get_optical_drive():
@@ -87,7 +77,7 @@ def get_optical_drive():
         return None
 
 def read_psx_game_id(drive_path):
-    """Read PSX game ID from system.cnf."""
+    """Read PSX game serial from system.cnf, minimizing drive activity."""
     try:
         mount_point = "/mnt/cdrom"
         if not os.path.exists(mount_point):
@@ -108,6 +98,7 @@ def read_psx_game_id(drive_path):
             print(f"Successfully mounted {drive_path} with iso9660")
         
         system_cnf_variants = ["system.cnf", "SYSTEM.CNF", "System.cnf"]
+        game_id = None
         for root, dirs, files in os.walk(mount_point):
             for variant in system_cnf_variants:
                 if variant in files:
@@ -119,24 +110,32 @@ def read_psx_game_id(drive_path):
                             if "BOOT" in line.upper():
                                 raw_id = line.split("=")[1].strip().split("\\")[1].split(";")[0]
                                 game_id = raw_id.replace(".", "").replace("_", "-")
-                                print(f"Extracted PSX Game ID: {game_id}")
-                                return game_id
-        print("system.cnf not found on disc (checked all case variations).")
-        return None
+                                print(f"Extracted PSX Game Serial: {game_id}")
+                                break
+                    if game_id:
+                        break
+            if game_id:
+                break
+        
+        os.system(f"umount {mount_point}")
+        print(f"Unmounted {mount_point}")
+        
+        if not game_id:
+            print("system.cnf not found on disc (checked all case variations).")
+        return game_id
     except Exception as e:
         print(f"Error reading PSX disc: {e}")
+        os.system(f"umount {mount_point} 2>/dev/null")
         return None
-    finally:
-        os.system(f"umount {mount_point}")
 
 def read_saturn_game_id(drive_path):
-    """Read Saturn game ID from disc header at offset 0x20-0x2A."""
+    """Read Saturn game serial from disc header at offset 0x20-0x2A."""
     try:
         with open(drive_path, 'rb') as f:
             f.seek(0)  # Sector 0
             sector = f.read(2048)
             game_id = sector[32:42].decode('ascii', errors='ignore').strip()  # Offset 0x20 to 0x2A
-            print(f"Extracted Saturn Game ID: {game_id}")
+            print(f"Extracted Saturn Game Serial: {game_id}")
             return game_id
     except Exception as e:
         print(f"Error reading Saturn disc: {e}")
@@ -146,7 +145,6 @@ def find_game_file(title, system):
     """Search for .chd or .cue game file based on system."""
     paths = PSX_GAME_PATHS if system == "PSX" else SATURN_GAME_PATHS
     
-    # Check for .chd first
     game_filename = f"{title}.chd"
     for base_path in paths:
         game_file = os.path.join(base_path, game_filename)
@@ -158,7 +156,6 @@ def find_game_file(title, system):
                 print(f"Game file {game_file} is not readable")
             return game_file
     
-    # If .chd not found, check for .cue
     game_filename = f"{title}.cue"
     for base_path in paths:
         game_file = os.path.join(base_path, game_filename)
@@ -199,15 +196,39 @@ def create_mgl_file(core_path, game_file, mgl_path, system):
     tree.write(mgl_path, encoding="utf-8", xml_declaration=True)
     print(f"Overwrote MGL file at {mgl_path}")
 
-def launch_game_on_mister(game_id, title, core_path, system, drive_path):
+def log_unknown_game(serial, title, system, drive_path):
+    """Log unmatched game to the unknown table."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO unknown (serial, title, category, region, system, language, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            serial if serial else "Unknown",
+            title,
+            "Games",
+            "Unknown",
+            system,
+            "Unknown",
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        ))
+        conn.commit()
+        conn.close()
+        print(f"Logged unmatched game to unknown table: {serial} ({title}, {system})")
+    except Exception as e:
+        print(f"Error logging unknown game: {e}")
+
+def launch_game_on_mister(game_serial, title, core_path, system, drive_path):
     """Launch the game on MiSTer using a temporary MGL file."""
     if title == "Unknown Game":
-        print(f"Skipping launch for unknown game: {game_id}")
+        print(f"Skipping launch for unknown game: {game_serial}")
+        log_unknown_game(game_serial, title, system, drive_path)
         return
     
     game_file = find_game_file(title, system)
     if not game_file:
-        print(f"Game file not found for {title} ({game_id}). Triggering save script...")
+        print(f"Game file not found for {title} ({game_serial}). Triggering save script...")
         save_cmd = f"{SAVE_SCRIPT} \"{drive_path}\" \"{title}\" {system}"
         subprocess.run(save_cmd, shell=True, check=True)
         return
@@ -238,7 +259,7 @@ def main():
         print("Cannot proceed without cores. Exiting...")
         return
     
-    last_game_id = None
+    last_game_serial = None
     
     while True:
         drive_path = get_optical_drive()
@@ -250,37 +271,37 @@ def main():
         print(f"Checking drive {drive_path}...")
         
         # Try PSX first
-        psx_game_id = read_psx_game_id(drive_path)
-        if psx_game_id:
-            if (psx_game_id, "PSX") != last_game_id:
-                title = game_titles.get((psx_game_id, "PSX"), "Unknown Game")
-                print(f"Found PSX game: {title} ({psx_game_id})")
+        psx_game_serial = read_psx_game_id(drive_path)
+        if psx_game_serial:
+            if (psx_game_serial, "PSX") != last_game_serial:
+                title = game_titles.get((psx_game_serial, "PSX"), "Unknown Game")
+                print(f"Found PSX game: {title} ({psx_game_serial})")
                 if psx_core:
-                    launch_game_on_mister(psx_game_id, title, psx_core, "PSX", drive_path)
+                    launch_game_on_mister(psx_game_serial, title, psx_core, "PSX", drive_path)
                 else:
                     print("No PSX core available to launch game")
-                last_game_id = (psx_game_id, "PSX")
+                last_game_serial = (psx_game_serial, "PSX")
             else:
-                print(f"PSX game {psx_game_id} already launched. Waiting for new disc...")
+                print(f"PSX game {psx_game_serial} already launched. Waiting for new disc...")
             time.sleep(10)
             continue
         
         # Try Saturn if PSX fails
-        saturn_game_id = read_saturn_game_id(drive_path)
-        if saturn_game_id:
-            if (saturn_game_id, "SATURN") != last_game_id:
-                title = game_titles.get((saturn_game_id, "SATURN"), "Unknown Game")
-                print(f"Found Saturn game: {title} ({saturn_game_id})")
+        saturn_game_serial = read_saturn_game_id(drive_path)
+        if saturn_game_serial:
+            if (saturn_game_serial, "SATURN") != last_game_serial:
+                title = game_titles.get((saturn_game_serial, "SATURN"), "Unknown Game")
+                print(f"Found Saturn game: {title} ({saturn_game_serial})")
                 if saturn_core:
-                    launch_game_on_mister(saturn_game_id, title, saturn_core, "SATURN", drive_path)
+                    launch_game_on_mister(saturn_game_serial, title, saturn_core, "SATURN", drive_path)
                 else:
                     print("No Saturn core available to launch game")
-                last_game_id = (saturn_game_id, "SATURN")
+                last_game_serial = (saturn_game_serial, "SATURN")
             else:
-                print(f"Saturn game {saturn_game_id} already launched. Waiting for new disc...")
+                print(f"Saturn game {saturn_game_serial} already launched. Waiting for new disc...")
         else:
             print("No game detected. Waiting...")
-            last_game_id = None
+            last_game_serial = None
         
         time.sleep(10)
 
