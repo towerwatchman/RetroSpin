@@ -41,6 +41,7 @@ jobs:
         run: |
           cat << EOF > retrospin_db.json
           {
+            "db_id": "mister_retrospin",
             "files": {
               "media/fat/retrospin/retrospin_launcher.py": {
                 "hash": "$(sha256sum dist/media/fat/retrospin/retrospin_launcher.py | cut -d' ' -f1)",
@@ -97,6 +98,10 @@ jobs:
           curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
                -H "Accept: application/vnd.github.v3+json" \
                https://api.github.com/repos/towerwatchman/MiSTer_RetroSpin/collaborators/github-actions%5Bbot%5D/permission || echo "Failed to fetch permission"
+          echo "Checking branch protections:"
+          curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Accept: application/vnd.github.v3+json" \
+               https://api.github.com/repos/towerwatchman/MiSTer_RetroSpin/branches/main/protection || echo "No protections or failed to fetch"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
