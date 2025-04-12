@@ -178,6 +178,12 @@ def read_sega_game_id(drive_path, system):
         print(f"Error reading {system} disc: {e}")
         return None
 
+def clean_game_title(title):
+    """Remove language mappings like (En,Fr,De,Es,It) from the title."""
+    # Remove language tags, e.g., (En,Fr,De,Es,It), while preserving region like (USA)
+    cleaned = re.sub(r'\s*\((?:En|Fr|De|Es|It|Ja|Ko|Zh)(?:,[A-Za-z]+)*\)\s*$', '', title).strip()
+    return cleaned
+
 def find_game_file(title, system):
     """Search for .chd or complete .cue/.bin game files based on system."""
     paths = {
@@ -186,8 +192,12 @@ def find_game_file(title, system):
         "mcd": MCD_GAME_PATHS
     }[system]
     
+    # Clean title to remove language mappings
+    cleaned_title = clean_game_title(title)
+    print(f"Searching for game file with cleaned title: {cleaned_title}")
+    
     # Check for .chd first
-    game_filename = f"{title}.chd"
+    game_filename = f"{cleaned_title}.chd"
     for base_path in paths:
         game_file = os.path.join(base_path, game_filename)
         if os.path.exists(game_file):
@@ -199,10 +209,10 @@ def find_game_file(title, system):
             return game_file
     
     # Check for .cue and corresponding .bin
-    game_filename = f"{title}.cue"
+    game_filename = f"{cleaned_title}.cue"
     for base_path in paths:
         cue_file = os.path.join(base_path, game_filename)
-        bin_file = os.path.join(base_path, f"{title}.bin")
+        bin_file = os.path.join(base_path, f"{cleaned_title}.bin")
         if os.path.exists(cue_file):
             if os.path.exists(bin_file):
                 print(f"Found complete .cue/.bin pair: {cue_file}, {bin_file}")
@@ -215,9 +225,9 @@ def find_game_file(title, system):
                 print(f"Found .cue without .bin: {cue_file}")
                 return None  # Trigger save due to incomplete pair
         else:
-            print(f"No .cue file found for: {title}")
+            print(f"No .cue file found for: {cleaned_title}")
     
-    print(f"No complete .chd or .cue/.bin game files found for: {title}")
+    print(f"No complete .chd or .cue/.bin game files found for: {cleaned_title}")
     return None
 
 def show_popup(message):
@@ -349,7 +359,15 @@ def main():
             # Try Sega CD
             mcd_game_serial = read_sega_game_id(drive_path, "mcd")
             if mcd_game_serial:
-                title = game_titles.get((mcd_game_serial, "mcd"), "Unknown Game")
+                title = game_titles.get((mcd_game_serial, "mcd"))
+                if not title:
+                    # Fallback: strip -XX suffix and retry
+                    fallback_serial = re.sub(r'-\d+$', '', mcd_game_serial)
+                    if fallback_serial != mcd_game_serial:
+                        print(f"Retrying database lookup with fallback serial: {fallback_serial}")
+                        title = game_titles.get((fallback_serial, "mcd"), "Unknown Game")
+                    else:
+                        title = "Unknown Game"
                 print(f"Found Sega CD game: {title} ({mcd_game_serial})")
                 if mcd_core:
                     launch_game_on_mister(mcd_game_serial, title, mcd_core, "mcd", drive_path)
@@ -363,7 +381,15 @@ def main():
             # Try Saturn
             saturn_game_serial = read_sega_game_id(drive_path, "SS")
             if saturn_game_serial:
-                title = game_titles.get((saturn_game_serial, "SS"), "Unknown Game")
+                title = game_titles.get((saturn_game_serial, "SS"))
+                if not title:
+                    # Fallback: strip -XX suffix and retry
+                    fallback_serial = re.sub(r'-\d+$', '', saturn_game_serial)
+                    if fallback_serial != saturn_game_serial:
+                        print(f"Retrying database lookup with fallback serial: {fallback_serial}")
+                        title = game_titles.get((fallback_serial, "SS"), "Unknown Game")
+                    else:
+                        title = "Unknown Game"
                 print(f"Found Saturn game: {title} ({saturn_game_serial})")
                 if saturn_core:
                     launch_game_on_mister(saturn_game_serial, title, saturn_core, "SS", drive_path)
