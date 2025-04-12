@@ -20,22 +20,22 @@ jobs:
 
       - name: Set up directory structure
         run: |
-          mkdir -p dist/media/fat/retrospin
-          mkdir -p dist/media/fat/Scripts
+          mkdir -p dist/retrospin
+          mkdir -p dist/Scripts
           mkdir -p db
 
       - name: Copy RetroSpin files
         run: |
-          cp retrospin_launcher.py dist/media/fat/retrospin/
-          cp save_disc.sh dist/media/fat/retrospin/
-          cp retrospin.sh dist/media/fat/Scripts/
-          cp games.db dist/media/fat/retrospin/
+          cp retrospin_launcher.py dist/retrospin/
+          cp save_disc.sh dist/retrospin/
+          cp retrospin.sh dist/Scripts/
+          cp games.db dist/retrospin/
 
       - name: Set executable permissions
         run: |
-          chmod +x dist/media/fat/retrospin/retrospin_launcher.py
-          chmod +x dist/media/fat/retrospin/save_disc.sh
-          chmod +x dist/media/fat/Scripts/retrospin.sh
+          chmod +x dist/retrospin/retrospin_launcher.py
+          chmod +x dist/retrospin/save_disc.sh
+          chmod +x dist/Scripts/retrospin.sh
 
       - name: Create retrospin_db.json
         run: |
@@ -44,33 +44,33 @@ jobs:
             "db_id": "mister_retrospin",
             "timestamp": $(date +%s),
             "files": {
-              "media/fat/retrospin/retrospin_launcher.py": {
-                "hash": "$(md5sum dist/media/fat/retrospin/retrospin_launcher.py | cut -d' ' -f1)",
-                "size": $(wc -c < dist/media/fat/retrospin/retrospin_launcher.py),
+              "retrospin/retrospin_launcher.py": {
+                "hash": "$(md5sum dist/retrospin/retrospin_launcher.py | cut -d' ' -f1)",
+                "size": $(wc -c < dist/retrospin/retrospin_launcher.py),
                 "url": "https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/retrospin_launcher.py",
                 "tags": ["retrospin", "utility"],
                 "overwrite": true,
                 "reboot": false
               },
-              "media/fat/retrospin/save_disc.sh": {
-                "hash": "$(md5sum dist/media/fat/retrospin/save_disc.sh | cut -d' ' -f1)",
-                "size": $(wc -c < dist/media/fat/retrospin/save_disc.sh),
+              "retrospin/save_disc.sh": {
+                "hash": "$(md5sum dist/retrospin/save_disc.sh | cut -d' ' -f1)",
+                "size": $(wc -c < dist/retrospin/save_disc.sh),
                 "url": "https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/save_disc.sh",
                 "tags": ["retrospin", "utility"],
                 "overwrite": true,
                 "reboot": false
               },
-              "media/fat/Scripts/retrospin.sh": {
-                "hash": "$(md5sum dist/media/fat/Scripts/retrospin.sh | cut -d' ' -f1)",
-                "size": $(wc -c < dist/media/fat/Scripts/retrospin.sh),
+              "Scripts/retrospin.sh": {
+                "hash": "$(md5sum dist/Scripts/retrospin.sh | cut -d' ' -f1)",
+                "size": $(wc -c < dist/Scripts/retrospin.sh),
                 "url": "https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/retrospin.sh",
                 "tags": ["retrospin", "utility"],
                 "overwrite": true,
                 "reboot": false
               },
-              "media/fat/retrospin/games.db": {
-                "hash": "$(md5sum dist/media/fat/retrospin/games.db | cut -d' ' -f1)",
-                "size": $(wc -c < dist/media/fat/retrospin/games.db),
+              "retrospin/games.db": {
+                "hash": "$(md5sum dist/retrospin/games.db | cut -d' ' -f1)",
+                "size": $(wc -c < dist/retrospin/games.db),
                 "url": "https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/games.db",
                 "tags": ["retrospin", "utility"],
                 "overwrite": true,
@@ -78,10 +78,10 @@ jobs:
               }
             },
             "folders": {
-              "media/fat/retrospin/": {
+              "retrospin/": {
                 "tags": ["retrospin"]
               },
-              "media/fat/Scripts/": {
+              "Scripts/": {
                 "tags": ["retrospin"]
               }
             },
@@ -106,7 +106,7 @@ jobs:
       - name: Create RetroSpin.db
         run: |
           cd dist
-          tar -cvf RetroSpin.db media
+          tar -cvf RetroSpin.db retrospin Scripts
           mv RetroSpin.db ../
           cd ..
 
