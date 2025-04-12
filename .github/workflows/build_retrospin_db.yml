@@ -91,23 +91,25 @@ jobs:
         run: |
           echo "Git remote URL:"
           git remote -v
-          echo "Checking branch protections (requires gh CLI):"
-          if command -v gh >/dev/null; then
-            gh api repos/towerwatchman/MiSTer_RetroSpin/branches/main/protection || echo "No gh CLI or no protections"
-          else
-            echo "gh CLI not installed"
-          fi
+          echo "Current branch:"
+          git branch --show-current
+          echo "Checking user permissions:"
+          curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+               -H "Accept: application/vnd.github.v3+json" \
+               https://api.github.com/repos/towerwatchman/MiSTer_RetroSpin/collaborators/github-actions%5Bbot%5D/permission || echo "Failed to fetch permission"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Commit retrospin_db.json.zip
+      - name: Commit and Push Changes
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add -f db/retrospin_db.json.zip
           git add .gitignore
-          git commit -m "Update retrospin_db.json.zip and .gitignore"
-          git push
+          git commit -m "Update retrospin_db.json.zip and .gitignore" || echo "No changes to commit"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
