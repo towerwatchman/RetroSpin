@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import sqlite3
 import re
 from datetime import datetime
-import tempfile  # Added missing import
+import tempfile
 
 # URL template for Redump DAT files
 REDUMP_URL_TEMPLATE = "http://redump.org/datfile/{}/serial,version"
@@ -14,30 +14,48 @@ DATA_DIR = "DATA"
 DB_PATH = "games.db"
 
 # List of systems to scrape
-SYSTEMS = ["psx", "ss", "ps2"]  # Adjusted 'saturn' to 'ss' per output
+SYSTEMS = ["psx", "ajcd", "acd", "cd32", "cdtv", "pce", "ngcd", "3do", "cdi", "mcd", "ss"]
 
 # Region mappings
 REGION_MAP = {
-    "(USA)": "NTSC-U",
-    "(Europe)": "PAL",
-    "(Japan)": "NTSC-J",
-    "(Asia)": "NTSC-J",
-    "(Australia)": "PAL",
-    "(Brazil)": "NTSC-U",
-    "(Canada)": "NTSC-U",
-    "(China)": "NTSC-J",
-    "(France)": "PAL",
-    "(Germany)": "PAL",
-    "(Italy)": "PAL",
-    "(Korea)": "NTSC-J",
-    "(Netherlands)": "PAL",
-    "(Spain)": "PAL",
-    "(Sweden)": "PAL",
-    "(Taiwan)": "NTSC-J",
-    "(UK)": "PAL"
+    "USA": "NTSC-U",
+    "Europe": "PAL",
+    "Japan": "NTSC-J",
+    "Asia": "NTSC-J",
+    "Australia": "PAL",
+    "Brazil": "NTSC-U",
+    "Canada": "NTSC-U",
+    "China": "NTSC-J",
+    "France": "PAL",
+    "Germany": "PAL",
+    "Italy": "PAL",
+    "Korea": "NTSC-J",
+    "Netherlands": "PAL",
+    "Spain": "PAL",
+    "Sweden": "PAL",
+    "Taiwan": "NTSC-J",
+    "UK": "PAL",
+    "Russia": "PAL",
+    "Scandinavia": "PAL",
+    "Greece": "PAL",
+    "Finland": "PAL",
+    "Norway": "PAL",
+    "Ireland": "PAL",
+    "Portugal": "PAL",
+    "Austria": "PAL",
+    "Israel": "PAL",
+    "Poland": "PAL",
+    "Denmark": "PAL",
+    "Belgium": "PAL",
+    "India": "PAL",
+    "Latin America": "PAL",
+    "Croatia": "PAL",
+    "World": "NTSC-U",
+    "Switzerland": "PAL",
+    "South Africa": "PAL"
 }
 
-# Language mappings
+# Language mappings for explicit tags
 LANGUAGE_MAP = {
     "En": "English",
     "Ja": "Japanese",
@@ -53,7 +71,49 @@ LANGUAGE_MAP = {
     "Fi": "Finnish",
     "Zh": "Chinese",
     "Ko": "Korean",
-    "Pl": "Polish"
+    "Pl": "Polish",
+    "Ru": "Russian",
+    "El": "Greek",
+    "He": "Hebrew"
+}
+
+# Region-to-language mapping for all regions
+REGION_LANGUAGE_MAP = {
+    "USA": "English",
+    "Europe": "English",
+    "Japan": "Japanese",
+    "Asia": "English",
+    "Australia": "English",
+    "Brazil": "Portuguese",
+    "Canada": "English",
+    "China": "Chinese",
+    "France": "French",
+    "Germany": "German",
+    "Italy": "Italian",
+    "Korea": "Korean",
+    "Netherlands": "Dutch",
+    "Spain": "Spanish",
+    "Sweden": "Swedish",
+    "Taiwan": "Chinese",
+    "UK": "English",
+    "Russia": "Russian",
+    "Scandinavia": "English",
+    "Greece": "Greek",
+    "Finland": "Finnish",
+    "Norway": "Norwegian",
+    "Ireland": "English",
+    "Portugal": "Portuguese",
+    "Austria": "German",
+    "Israel": "Hebrew",
+    "Poland": "Polish",
+    "Denmark": "Danish",
+    "Belgium": "Dutch",
+    "India": "English",
+    "Latin America": "Spanish",
+    "Croatia": "Croatian",
+    "World": "English",
+    "Switzerland": "German",
+    "South Africa": "English"
 }
 
 def ensure_data_dir():
@@ -71,9 +131,9 @@ def ensure_table_schema(cursor):
     """Ensure games and unknown tables exist with correct schema."""
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS games (
+            serial TEXT,
             title TEXT,
             category TEXT,
-            serial TEXT,
             region TEXT,
             system TEXT,
             language TEXT,
@@ -82,9 +142,9 @@ def ensure_table_schema(cursor):
     ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS unknown (
+            serial TEXT,
             title TEXT,
             category TEXT,
-            serial TEXT,
             region TEXT,
             system TEXT,
             language TEXT,
@@ -97,18 +157,37 @@ def extract_region_and_language(game_name):
     region = "Unknown"
     language = "Unknown"
     
-    for redump_region, db_region in REGION_MAP.items():
-        if redump_region in game_name:
-            region = db_region
-            break
+    # Check for regions in parentheses (e.g., "Japan", "USA", "Japan, Asia")
+    region_match = re.findall(r'\(([^)]+)\)', game_name)
+    matched_regions = []
+    if region_match:
+        for regions in region_match:
+            # Split multiple regions (e.g., "Japan, Asia" → ["Japan", "Asia"])
+            region_list = [r.strip() for r in regions.split(",")]
+            for r in region_list:
+                # Check if the region (or part of it) is in REGION_MAP
+                for map_region, db_region in REGION_MAP.items():
+                    if map_region.lower() in r.lower():
+                        region = db_region
+                        matched_regions.append(map_region)
+                        break
+                if region != "Unknown":
+                    break
+            if region != "Unknown":
+                break
     
+    # Check for language map
     lang_match = re.search(r'\((En?,(?:[A-Z][a-z]?,)*[A-Z][a-z]?)\)', game_name)
     if lang_match:
         redump_langs = lang_match.group(1).split(",")
         db_langs = [LANGUAGE_MAP.get(lang.strip(), lang.strip()) for lang in redump_langs]
         language = ", ".join(db_langs)
-    elif "(USA)" in game_name or "(Canada)" in game_name:
-        language = "English"
+    else:
+        # Region-based language mapping
+        for matched_region in matched_regions:
+            if matched_region in REGION_LANGUAGE_MAP:
+                language = REGION_LANGUAGE_MAP[matched_region]
+                break
     
     return region, language
 
@@ -174,6 +253,7 @@ def download_and_extract_dat(system):
 def parse_redump_xml(file_path, system):
     """Parse Redump DAT (XML) and return list of game data."""
     games = []
+    unknown_games = []
     try:
         tree = ET.parse(file_path)
         root = tree.getroot()
@@ -184,26 +264,41 @@ def parse_redump_xml(file_path, system):
             serial_elem = game.find("serial")
             
             category = category_elem.text.strip() if category_elem is not None else "Unknown"
-            serial = serial_elem.text.strip() if serial_elem is not None else "Unknown"
+            serial = serial_elem.text.strip() if serial_elem is not None else None
             region, language = extract_region_and_language(title)
             
-            games.append({
-                "title": title,
-                "category": category,
-                "serial": serial,
-                "region": region,
-                "system": system.upper(),
-                "language": language
-            })
+            if not serial or serial == "":
+                # Add to unknown_games if no serial
+                unknown_games.append({
+                    "title": title,
+                    "category": category,
+                    "serial": "Unknown",
+                    "region": region,
+                    "system": system.upper(),
+                    "language": language,
+                    "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                })
+            else:
+                # Split multiple serials and create a row for each
+                serials = [s.strip() for s in serial.split(",") if s.strip()]
+                for serial in serials:
+                    games.append({
+                        "title": title,
+                        "category": category,
+                        "serial": serial,
+                        "region": region,
+                        "system": system.upper(),
+                        "language": language
+                    })
         
-        return games
+        return games, unknown_games
     
     except Exception as e:
         print(f"Error parsing Redump XML for {system}: {e}")
-        return []
+        return [], []
 
 def populate_database():
-    """Scrape Redump DAT files for all systems and populate games table."""
+    """Scrape Redump DAT files for all systems and populate games and unknown tables."""
     ensure_data_dir()
     conn, cursor = connect_to_database()
     ensure_table_schema(cursor)
@@ -213,25 +308,39 @@ def populate_database():
         if not dat_path:
             continue
         
-        games = parse_redump_xml(dat_path, system)
-        if not games:
-            continue
+        games, unknown_games = parse_redump_xml(dat_path, system)
         
+        # Insert into games table
         for game in games:
             cursor.execute('''
-                INSERT OR REPLACE INTO games (title, category, serial, region, system, language)
+                INSERT OR REPLACE INTO games (serial, title, category, region, system, language)
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', (
+                game["serial"],
                 game["title"],
                 game["category"],
-                game["serial"],
                 game["region"],
                 game["system"],
                 game["language"]
             ))
         
+        # Insert into unknown table
+        for game in unknown_games:
+            cursor.execute('''
+                INSERT INTO unknown (serial, title, category, region, system, language, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                game["serial"],
+                game["title"],
+                game["category"],
+                game["region"],
+                game["system"],
+                game["language"],
+                game["timestamp"]
+            ))
+        
         conn.commit()
-        print(f"Added {len(games)} games for {system}")
+        print(f"Added {len(games)} games and {len(unknown_games)} unknown entries for {system}")
     
     conn.close()
     print("Database population complete.")
@@ -247,13 +356,6 @@ def main():
     unknown_count = cursor.fetchone()[0]
     print(f"Total games in database: {game_count}")
     print(f"Total unknown entries: {unknown_count}")
-    # Test specific entries
-    test_titles = ["Ace Combat 3 - Electrosphere (Europe) (En,Fr,De,Es,It)", "Bio Hazard (Japan) (Rev 1)"]
-    for title in test_titles:
-        cursor.execute("SELECT title, category, serial, region, system, language FROM games WHERE title = ?", (title,))
-        result = cursor.fetchone()
-        if result:
-            print(f"Test: {result[0]} (Category: {result[1]}, Serial: {result[2]}, Region: {result[3]}, System: {result[4]}, Language: {result[5]})")
     conn.close()
 
 if __name__ == "__main__":
