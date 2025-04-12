@@ -25,7 +25,8 @@ Because we need to create .cue files and access a sqlite3 database, this project
 - [x] Save disc and .bin + .cue to correct game folder. Game will only be saved to USB drive.
 - [ ] Option to save disc as .chd
 - [ ] Add support to save to SD card
-- [ ] Creat issue automatically if disc is not found but an ID is. 
+- [ ] Creat issue automatically if disc is not found but an ID is.
+- [ ] Multidisc support. Right now this will not work. 
 
 ## Installation
 Add the following entries to `/media/fat/downloader.ini`:
