@@ -27,9 +27,23 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
     TOC_FILE="$BASE_DIR/$TITLE.toc"
     echo "Saving disc to: $BIN_FILE..."
 
-    # Try to get actual disc size, fall back to 700MB if it fails
-    DISC_SIZE=$(blockdev --getsize64 "$DRIVE_PATH" 2>/dev/null || echo $((700 * 1024 * 1024)))
-    echo "Disc size detected: $DISC_SIZE bytes"
+    # Try to get disc size with cdrdao disc-info
+    DISC_SECTORS=$(${RIPDISC_PATH}/cdrdao disc-info --device "$DRIVE_PATH" 2>/dev/null | grep "Total sectors" | awk '{print $3}')
+    if [ -n "$DISC_SECTORS" ] && [ "$DISC_SECTORS" -gt 0 ]; then
+        # Use 2352 bytes per sector for raw CD data
+        DISC_SIZE=$((DISC_SECTORS * 2352))
+        echo "Disc size detected via cdrdao: $DISC_SIZE bytes ($DISC_SECTORS sectors)"
+    else
+        # Fall back to blockdev
+        DISC_SIZE=$(blockdev --getsize64 "$DRIVE_PATH" 2>/dev/null)
+        if [ -n "$DISC_SIZE" ] && [ "$DISC_SIZE" -gt 0 ]; then
+            echo "Disc size detected via blockdev: $DISC_SIZE bytes"
+        else
+            # Last resort: 700MB
+            DISC_SIZE=$((700 * 1024 * 1024))
+            echo "Disc size detection failed, using fallback: $DISC_SIZE bytes"
+        fi
+    fi
 
     # Convert sizes to MB for display
     DISC_SIZE_MB=$(echo "scale=1; $DISC_SIZE / 1024 / 1024" | bc)
