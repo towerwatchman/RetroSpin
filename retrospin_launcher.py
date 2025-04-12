@@ -77,6 +77,16 @@ def get_optical_drive():
         print(f"Error detecting drive: {e}")
         return None
 
+def is_disc_present(drive_path):
+    """Check if a disc is present in the drive."""
+    try:
+        with open(drive_path, 'rb') as f:
+            f.read(1)  # Try reading a byte to check if disc is accessible
+        return True
+    except Exception as e:
+        print(f"No disc detected in {drive_path}: {e}")
+        return False
+
 def read_psx_game_id(drive_path):
     """Read PSX game serial from system.cnf on physical disc, minimizing drive activity."""
     try:
@@ -269,20 +279,23 @@ def main():
         return
     
     last_game_serial = None
+    last_drive_path = None
     
     while True:
         drive_path = get_optical_drive()
-        if not drive_path:
-            print("No optical drive detected. Waiting...")
-            time.sleep(10)
-            continue
         
-        print(f"Checking drive {drive_path}...")
-        
-        # Try PSX first
-        psx_game_serial = read_psx_game_id(drive_path)
-        if psx_game_serial:
-            if (psx_game_serial, "PSX") != last_game_serial:
+        # Check if drive is accessible and disc is present
+        if drive_path and is_disc_present(drive_path):
+            if last_game_serial and drive_path == last_drive_path:
+                print(f"Same game already loaded: {last_game_serial}. Waiting for drive to open...")
+                time.sleep(1)
+                continue
+            
+            print(f"Checking drive {drive_path}...")
+            
+            # Try PSX first
+            psx_game_serial = read_psx_game_id(drive_path)
+            if psx_game_serial:
                 title = game_titles.get((psx_game_serial, "PSX"), "Unknown Game")
                 print(f"Found PSX game: {title} ({psx_game_serial})")
                 if psx_core:
@@ -290,15 +303,13 @@ def main():
                 else:
                     print("No PSX core available to launch game")
                 last_game_serial = (psx_game_serial, "PSX")
-            else:
-                print(f"PSX game {psx_game_serial} already launched. Waiting for new disc...")
-            time.sleep(10)
-            continue
-        
-        # Try Saturn if PSX fails
-        saturn_game_serial = read_saturn_game_id(drive_path)
-        if saturn_game_serial:
-            if (saturn_game_serial, "SS") != last_game_serial:
+                last_drive_path = drive_path
+                time.sleep(1)
+                continue
+            
+            # Try Saturn if PSX fails
+            saturn_game_serial = read_saturn_game_id(drive_path)
+            if saturn_game_serial:
                 title = game_titles.get((saturn_game_serial, "SS"), "Unknown Game")
                 print(f"Found Saturn game: {title} ({saturn_game_serial})")
                 if saturn_core:
@@ -306,13 +317,17 @@ def main():
                 else:
                     print("No Saturn core available to launch game")
                 last_game_serial = (saturn_game_serial, "SS")
+                last_drive_path = drive_path
             else:
-                print(f"Saturn game {saturn_game_serial} already launched. Waiting for new disc...")
+                print("No game detected. Waiting...")
+                last_game_serial = None
+                last_drive_path = None
         else:
-            print("No game detected. Waiting...")
+            print("No optical drive or disc detected. Waiting...")
             last_game_serial = None
+            last_drive_path = None
         
-        time.sleep(10)
+        time.sleep(1)
 
 if __name__ == "__main__":
     try:

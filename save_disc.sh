@@ -12,13 +12,13 @@ BASE_DIR="$USB_SATURN_PATH"
 if [ "$SYSTEM" == "PSX" ]; then
     BASE_DIR="$USB_PSX_PATH"
 fi
-RIPDISC_PATH="/media/fat/retrospin/cdrdao"
+RIPDISC_PATH="/media/fat/_Utility"
 
 # Ensure directory exists
 mkdir -p "$BASE_DIR"
 
 # Popup to ask user
-dialog --yesno "Game file not found: $TITLE. Save disc as .bin/.cue to USB?" 10 40
+dialog --yesno "\Zb\Z1RetroSpin\Zn\nGame file not found: $TITLE. Save disc as .bin/.cue to USB?" 10 50
 RESPONSE=$?
 
 if [ $RESPONSE -eq 0 ]; then  # Yes
@@ -31,7 +31,7 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
     DISC_SIZE=$(blockdev --getsize64 "$DRIVE_PATH" 2>/dev/null || echo $((700 * 1024 * 1024)))
     echo "Disc size detected: $DISC_SIZE bytes"
 
-    # Estimate time (assuming 2.4 MB/s read rate from previous test)
+    # Estimate time (assuming 2.4 MB/s read rate)
     READ_RATE=2457600  # 2.4 MB/s in bytes
     ESTIMATED_SECONDS=$((DISC_SIZE / READ_RATE))
     ESTIMATED_MINUTES=$((ESTIMATED_SECONDS / 60))
@@ -44,7 +44,7 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
     # Get cdrdao process ID
     CDRDAO_PID=$!
 
-    # Progress gauge with RetroSpin V 1.0 in top left
+    # Progress gauge with RetroSpin in red
     (
         while kill -0 $CDRDAO_PID 2>/dev/null; do
             if [ -f "$BIN_FILE" ]; then
@@ -53,12 +53,12 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
                 if [ $PERCENT -gt 100 ]; then PERCENT=100; fi
                 echo "XXX"
                 echo "$PERCENT"
-                echo -e "RetroSpin V 1.0\nSaving $TITLE... $PERCENT% complete\nEstimated time: $ESTIMATED_MINUTES min $ESTIMATED_REMAINDER sec"
+                echo -e "\Zb\Z1RetroSpin\Zn\nSaving $TITLE... $PERCENT% complete\nEstimated time: $ESTIMATED_MINUTES min $ESTIMATED_REMAINDER sec"
                 echo "XXX"
             fi
             sleep 10  # Update every 10 seconds
         done
-    ) | dialog --gauge "RetroSpin V 1.0" 10 50 0
+    ) | dialog --gauge "\Zb\Z1RetroSpin\Zn" 10 50 0
 
     # Wait for cdrdao to finish and check status
     wait $CDRDAO_PID
@@ -80,8 +80,10 @@ if [ $RESPONSE -eq 0 ]; then  # Yes
     fi
     
     # Prompt user to close and restart launcher
-    dialog --msgbox "$FINAL_MESSAGE" 10 50
-    /media/fat/Scripts/retrospin.sh  # Updated to retrospin.sh
+    dialog --msgbox "\Zb\Z1RetroSpin\Zn\n$FINAL_MESSAGE" 10 50
+    /media/fat/Scripts/retrospin.sh
 else
     echo "User declined to save disc image"
+    clear
+    exit 0
 fi
