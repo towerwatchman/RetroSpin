@@ -11,11 +11,12 @@ Because we need to create .cue files and access a sqlite3 database, this project
 ## Status of Features
 
 #### Systems Supported
-- [x] Sony Playstation
-- [x] Sega Saturn
-- [ ] Sega Mega CD & Sega CD
-- [ ] Sega 32X
-- [ ] Neo Geo CD
+_______________________________________________________________________________________________________
+- [x] Sony Playstation | 11706 Games
+- [x] Sega Saturn | 2047 Games
+- [x] Sega Mega CD & Sega CD | 393 Games
+- [ ] Sega 32X CD                                   
+- [ ] Neo Geo CD | 133 Games
 - [ ] NEC PC Engine CD & TurboGrafx CD
 - [ ] Philips CD-i
 - [ ] Panasonic 3DO Interactive Multiplayer
