@@ -4,7 +4,7 @@ import sqlite3
 import time
 import re
 
-# Base URLs for each region (content frames)
+# Base URLs for each region
 BASE_URLS = {
     "NTSC-U": "https://psxdatacenter.com/ulist.html",
     "NTSC-J": "https://psxdatacenter.com/jlist.html",
@@ -19,20 +19,24 @@ HEADERS = {
     "Referer": "https://psxdatacenter.com/"
 }
 
+# Database path (local, move to /media/fat/retrospin/games.db on MiSTer)
+DB_PATH = "games.db"
+
 def create_database():
-    """Create SQLite3 database and table with system and language columns."""
-    conn = sqlite3.connect("games.db")
+    """Create SQLite3 database and table."""
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("""
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS games (
-            game_id TEXT PRIMARY KEY,
+            game_id TEXT,
             title TEXT,
             region TEXT,
             system TEXT,
             language TEXT,
-            updated_from_redump INTEGER DEFAULT 0
+            updated_from_redump TEXT,
+            PRIMARY KEY (game_id, system)
         )
-    """)
+    ''')
     conn.commit()
     conn.close()
 
@@ -41,13 +45,8 @@ def scrape_region(region, url):
     print(f"Scraping {region} games from {url}...")
     try:
         response = requests.get(url, headers=HEADERS, timeout=10)
-        if response.status_code != 200:
-            print(f"Failed to access {url}: {response.status_code}")
-            return []
-        
+        response.raise_for_status()
         soup = BeautifulSoup(response.content, "html.parser")
-        
-        print(f"Page title: {soup.title.text if soup.title else 'No title found'}")
         
         tables = soup.find_all("table", class_="sectiontable")
         if not tables:
@@ -61,7 +60,7 @@ def scrape_region(region, url):
             rows = table.find_all("tr")[1:]  # Skip header
             for row in rows:
                 cols = row.find_all("td")
-                if len(cols) >= 4:  # Ensure col2 (ID), col3 (title), and col4 (language) exist
+                if len(cols) >= 4:  # Ensure col2 (ID), col3 (title), col4 (language)
                     # Extract game IDs from col2, handling <br> tags
                     col2 = cols[1]
                     game_ids = []
@@ -86,64 +85,66 @@ def scrape_region(region, url):
                             base_title += content.strip()
                         elif content.name in ["span", "br"]:
                             break
-                    # Remove anything in [ ] including brackets
                     base_title = re.sub(r'\s*\[.*?\]', '', base_title).strip()
                     
                     # Get language from col4, remove brackets, join with commas
                     language_raw = cols[3].text.strip()
                     languages = [lang.strip("[]") for lang in language_raw.split("][")]
-                    language = ", ".join(languages)
+                    language = ", ".join(languages) if languages else "Unknown"
                     
                     # Handle single or multi-disc games
-                    if len(game_ids) == 1:
-                        games.append((game_ids[0], base_title, region, "PS1", language, 0))
-                    else:
-                        for i, game_id in enumerate(game_ids, 1):
-                            disc_title = f"{base_title} (Disc {i})"
-                            games.append((game_id, disc_title, region, "PS1", language, 0))
+                    for i, game_id in enumerate(game_ids, 1):
+                        disc_title = f"{base_title} (Disc {i})" if len(game_ids) > 1 else base_title
+                        games.append((game_id, disc_title, region, "PSX", language, None))
         
         print(f"Found {len(games)} game entries in {region}")
         return games
     
+    except requests.RequestException as e:
+        print(f"Error fetching {url}: {e}")
+        return []
     except Exception as e:
-        print(f"Error scraping {url}: {e}")
+        print(f"Error parsing {url}: {e}")
         return []
 
 def populate_database():
     """Scrape all regions and populate the database."""
     create_database()
-    conn = sqlite3.connect("games.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     for region, url in BASE_URLS.items():
         games = scrape_region(region, url)
-        cursor.executemany("""
-            INSERT OR IGNORE INTO games (game_id, title, region, system, language, updated_from_redump)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, games)
-        conn.commit()
-        print(f"Added {len(games)} games for {region}")
+        if games:
+            cursor.executemany('''
+                INSERT OR REPLACE INTO games (game_id, title, region, system, language, updated_from_redump)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', games)
+            conn.commit()
+            print(f"Added {len(games)} games for {region}")
         time.sleep(2)  # Be polite to the server
     
     conn.close()
     print("Database population complete.")
 
 def main():
-    print("Starting PS1 game data scrape for all regions...")
+    print("Starting PSX game data scrape for all regions...")
     populate_database()
     # Verify database contents
-    conn = sqlite3.connect("games.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM games")
+    cursor.execute("SELECT COUNT(*) FROM games WHERE system = 'PSX'")
     count = cursor.fetchone()[0]
-    print(f"Total games in database: {count}")
+    print(f"Total PSX games in database: {count}")
     # Test specific entries
-    test_ids = ["SLUS-00518", "SLUS-01026", "SLUS-01183", "SLUS-00955", "SLUS-01224", "SLPS-01330"]  # Added AFRAID GEAR
+    test_ids = ["SLUS-00515", "SLUS-01026", "SLUS-01183", "SLUS-00955", "SLUS-01224", "SLPS-01330"]
     for test_id in test_ids:
-        cursor.execute("SELECT title, region, system, language, updated_from_redump FROM games WHERE game_id = ?", (test_id,))
+        cursor.execute("SELECT title, region, system, language FROM games WHERE game_id = ? AND system = 'PSX'", (test_id,))
         result = cursor.fetchone()
         if result:
-            print(f"Test: {test_id} = {result[0]} ({result[1]}, {result[2]}, Language: {result[3]}, Updated: {result[4]})")
+            print(f"Test: {test_id} = {result[0]} ({result[1]}, {result[2]}, Language: {result[3]})")
+        else:
+            print(f"Test: {test_id} not found")
     conn.close()
 
 if __name__ == "__main__":
