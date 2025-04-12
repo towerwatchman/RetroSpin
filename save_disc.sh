@@ -34,11 +34,6 @@ cleanup() {
         echo "Removing partial TOC file: $TOC_FILE"
         rm -f "$TOC_FILE"
     fi
-    if [ -n "$BIN_FILE" ] && [ -f "$BIN_FILE" ]; then
-        echo "Removing partial BIN file: $BIN_FILE"
-        rm -f "$BIN_FILE"
-    fi
-    # Note: /tmp/retrospin_temp.toc is not deleted for debugging
 }
 
 # Trap exit signals
@@ -55,7 +50,7 @@ if [ -f "$CUE_FILE" ]; then
         SAVE_NEEDED=0
     else
         echo ".cue file found without .bin: $CUE_FILE"
-        dialog --yesno "RetroSpin\n.cue file found for $TITLE, but no .bin file.\nSave#pragma once disc as .bin/.cue to USB?" 12 50
+        dialog --yesno "RetroSpin\n.cue file found for $TITLE, but no .bin file.\nSave disc as .bin/.cue to USB?" 12 50
         RESPONSE=$?
         if [ $RESPONSE -ne 0 ]; then
             echo "User declined to save disc image due to missing .bin"
@@ -78,13 +73,13 @@ if [ $SAVE_NEEDED -eq 1 ]; then
     clear  # Clear the screen after confirming save
     echo "Preparing to save disc to: $CUE_FILE, $BIN_FILE..."
 
-    # Delete any existing .cue or partial .bin files
+    # Delete any existing .cue or .bin files before saving
     if [ -f "$CUE_FILE" ]; then
-        echo "Removing lone .cue file: $CUE_FILE"
+        echo "Removing existing .cue file: $CUE_FILE"
         rm -f "$CUE_FILE"
     fi
     if [ -f "$BIN_FILE" ]; then
-        echo "Removing partial .bin file: $BIN_FILE"
+        echo "Removing existing .bin file: $BIN_FILE"
         rm -f "$BIN_FILE"
     fi
 

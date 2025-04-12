@@ -29,16 +29,30 @@ def is_disc_present(drive_path):
         print(f"No disc detected in {drive_path}: {e}")
         return False
 
+def is_mounted(drive_path, mount_point):
+    """Check if the drive is already mounted at the mount point."""
+    try:
+        result = subprocess.run(['mount'], capture_output=True, text=True, check=True)
+        return f"{drive_path} on {mount_point}" in result.stdout
+    except Exception as e:
+        print(f"Error checking mount status: {e}")
+        return False
+
 def read_psx_game_id(drive_path):
     """Read PSX game serial from system.cnf on physical disc, minimizing drive activity."""
     mount_point = "/mnt/cdrom"
     try:
         # Ensure mount point is clean
-        os.system(f"umount {mount_point} 2>/dev/null")
+        if is_mounted(drive_path, mount_point):
+            print(f"{drive_path} already mounted on {mount_point}, attempting to unmount...")
+            os.system(f"umount -f {mount_point} 2>/dev/null")
+        else:
+            os.system(f"umount {mount_point} 2>/dev/null")
         if not os.path.exists(mount_point):
             os.makedirs(mount_point)
         
         # Try mounting as ISO9660
+        print(f"Attempting to mount {drive_path} as iso9660...")
         mount_cmd = f"mount {drive_path} {mount_point} -t iso9660 -o ro"
         mount_result = os.system(mount_cmd)
         if mount_result != 0:
@@ -47,7 +61,6 @@ def read_psx_game_id(drive_path):
             mount_result = os.system(mount_cmd)
             if mount_result != 0:
                 print(f"Failed to mount {drive_path} with iso9660 or udf. Return code: {mount_result}")
-                os.system(f"umount {mount_point} 2>/dev/null")
                 return None
             else:
                 print(f"Successfully mounted {drive_path} with udf")
@@ -78,7 +91,8 @@ def read_psx_game_id(drive_path):
                 break
         
         # Unmount immediately
-        os.system(f"umount {mount_point} 2>/dev/null")
+        print(f"Unmounting {mount_point}...")
+        os.system(f"umount -f {mount_point} 2>/dev/null")
         print(f"Unmounted {mount_point}")
         
         if not game_serial:
@@ -86,10 +100,12 @@ def read_psx_game_id(drive_path):
         return game_serial
     except Exception as e:
         print(f"Error reading PSX disc: {e}")
-        os.system(f"umount {mount_point} 2>/dev/null")
         return None
     finally:
-        os.system(f"umount {mount_point} 2>/dev/null")  # Ensure cleanup
+        # Ensure cleanup
+        if is_mounted(drive_path, mount_point):
+            print(f"Final cleanup: Forcing unmount of {mount_point}")
+            os.system(f"umount -f {mount_point} 2>/dev/null")
 
 def read_saturn_game_id(drive_path):
     """Read Saturn game serial from disc header (offset 0x20-0x2A)."""

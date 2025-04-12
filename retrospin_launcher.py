@@ -1,3 +1,4 @@
+import os
 import time
 from retrospin.core import find_core
 from retrospin.database import load_game_titles

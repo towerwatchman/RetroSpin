@@ -15,10 +15,19 @@ MCD_GAME_PATHS = [
 ]
 
 def clean_game_title(title):
-    """Remove language mappings like (En,Fr,De,Es,It) from the title, preserving region."""
-    # Remove language tags, e.g., (En,Fr,De,Es,It), (Ja), but keep (Japan), (USA)
-    cleaned = re.sub(r'\s*\((?:En|Fr|De|Es|It|Ja|Ko|Zh)(?:,[A-Za-z]+)*\)\s*$', '', title).strip()
-    return cleaned
+    """Remove language mappings, (Beta), (Rev *), dates, and malformed tags from the title, preserving region."""
+    cleaned = title
+    # Remove language tags (e.g., (En,Fr,De,Es,It), (Ja))
+    cleaned = re.sub(r'\s*\((?:En|Fr|De|Es|It|Ja|Ko|Zh)(?:,[A-Za-z]+)*\)\s*$', '', cleaned, flags=re.IGNORECASE)
+    # Remove (Beta)
+    cleaned = re.sub(r'\s*\(Beta\)\s*$', '', cleaned, flags=re.IGNORECASE)
+    # Remove (Rev <number>) (e.g., (Rev 1), (Rev 123))
+    cleaned = re.sub(r'\s*\(Rev\s+\d+\)\s*$', '', cleaned, flags=re.IGNORECASE)
+    # Remove date tags (e.g., (2000-08-21))
+    cleaned = re.sub(r'\s*\(\d{4}-\d{2}-\d{2}\)\s*$', '', cleaned)
+    # Remove malformed or incomplete tags (e.g., (Rev, (, (USA)
+    cleaned = re.sub(r'\s*\([^\)]*?\s*$', '', cleaned)
+    return cleaned.strip()
 
 def find_game_file(title, system):
     """Search for .chd or complete .cue/.bin game files based on system."""
@@ -61,7 +70,7 @@ def find_game_file(title, system):
             else:
                 print(f"Found .cue without .bin for full title: {cue_file}")
     
-    # If full title fails, try cleaned title (remove language tags)
+    # If full title fails, try cleaned title
     cleaned_title = clean_game_title(title)
     if cleaned_title != safe_title:
         print(f"No files found with full title, trying cleaned title: {cleaned_title}")
