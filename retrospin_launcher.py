@@ -57,7 +57,9 @@ def load_game_titles():
         rows = cursor.fetchall()
         for row in rows:
             serial, title, system = row
-            game_titles[(serial.strip(), system.strip())] = title.strip()
+            serial = serial.strip().replace("-", "").upper()  # Normalize serial
+            system = system.strip().lower()  # Normalize system (MCD → mcd)
+            game_titles[(serial, system)] = title.strip()
         print(f"Successfully loaded {len(game_titles)} game titles from {DB_PATH}")
         conn.close()
     except Exception as e:
@@ -280,11 +282,11 @@ def log_unknown_game(serial, title, system, drive_path):
         print(f"Error logging unknown game: {e}")
 
 def launch_game_on_mister(game_serial, title, core_path, system, drive_path):
-    """Launch the game on MiSTer using a temporary MGL file."""
+    """Launch the game on MiSTer using a temporary MGL file or trigger save."""
+    # Use generic title for unknown games
     if title == "Unknown Game":
-        print(f"Skipping launch for unknown game: {game_serial}")
-        log_unknown_game(game_serial, title, system, drive_path)
-        return
+        title = f"Game ({game_serial})"
+        print(f"Using generic title for unknown game: {title}")
     
     game_file = find_game_file(title, system)
     if not game_file:
@@ -345,7 +347,8 @@ def main():
                 time.sleep(1)
                 os.system(f"umount /mnt/cdrom 2>/dev/null")  # Force unmount
             if psx_game_serial:
-                title = game_titles.get((psx_game_serial, "PSX"), "Unknown Game")
+                serial_key = psx_game_serial.replace("-", "").upper()
+                title = game_titles.get((serial_key, "PSX"), "Unknown Game")
                 print(f"Found PSX game: {title} ({psx_game_serial})")
                 if psx_core:
                     launch_game_on_mister(psx_game_serial, title, psx_core, "PSX", drive_path)
@@ -359,13 +362,15 @@ def main():
             # Try Sega CD
             mcd_game_serial = read_sega_game_id(drive_path, "mcd")
             if mcd_game_serial:
-                title = game_titles.get((mcd_game_serial, "mcd"))
+                serial_key = mcd_game_serial.replace("-", "").upper()
+                title = game_titles.get((serial_key, "mcd"))
                 if not title:
                     # Fallback: strip -XX suffix and retry
                     fallback_serial = re.sub(r'-\d+$', '', mcd_game_serial)
-                    if fallback_serial != mcd_game_serial:
+                    fallback_key = fallback_serial.replace("-", "").upper()
+                    if fallback_key != serial_key:
                         print(f"Retrying database lookup with fallback serial: {fallback_serial}")
-                        title = game_titles.get((fallback_serial, "mcd"), "Unknown Game")
+                        title = game_titles.get((fallback_key, "mcd"), "Unknown Game")
                     else:
                         title = "Unknown Game"
                 print(f"Found Sega CD game: {title} ({mcd_game_serial})")
@@ -381,13 +386,15 @@ def main():
             # Try Saturn
             saturn_game_serial = read_sega_game_id(drive_path, "SS")
             if saturn_game_serial:
-                title = game_titles.get((saturn_game_serial, "SS"))
+                serial_key = saturn_game_serial.replace("-", "").upper()
+                title = game_titles.get((serial_key, "SS"))
                 if not title:
                     # Fallback: strip -XX suffix and retry
                     fallback_serial = re.sub(r'-\d+$', '', saturn_game_serial)
-                    if fallback_serial != saturn_game_serial:
+                    fallback_key = fallback_serial.replace("-", "").upper()
+                    if fallback_key != serial_key:
                         print(f"Retrying database lookup with fallback serial: {fallback_serial}")
-                        title = game_titles.get((fallback_serial, "SS"), "Unknown Game")
+                        title = game_titles.get((fallback_key, "SS"), "Unknown Game")
                     else:
                         title = "Unknown Game"
                 print(f"Found Saturn game: {title} ({saturn_game_serial})")
