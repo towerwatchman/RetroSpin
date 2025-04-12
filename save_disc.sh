@@ -8,11 +8,15 @@ SYSTEM="$3"
 # USB paths
 USB_PSX_PATH="/media/usb0/games/PSX"
 USB_SATURN_PATH="/media/usb0/games/Saturn"
+USB_MCD_PATH="/media/usb0/games/MegaCD"
 BASE_DIR="$USB_SATURN_PATH"
 SYSTEM_NAME="Sega Saturn"
 if [ "$SYSTEM" == "PSX" ]; then
     BASE_DIR="$USB_PSX_PATH"
     SYSTEM_NAME="Sony PlayStation"
+elif [ "$SYSTEM" == "mcd" ]; then
+    BASE_DIR="$USB_MCD_PATH"
+    SYSTEM_NAME="Sega CD"
 fi
 RIPDISC_PATH="/media/fat/_Utility"
 

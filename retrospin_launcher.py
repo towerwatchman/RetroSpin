@@ -17,6 +17,10 @@ SATURN_GAME_PATHS = [
     "/media/fat/games/Saturn/",
     "/media/usb0/games/Saturn/"
 ]
+MCD_GAME_PATHS = [
+    "/media/fat/games/MegaCD/",
+    "/media/usb0/games/MegaCD/"
+]
 DB_PATH = "/media/fat/retrospin/games.db"
 TMP_MGL_PATH = "/tmp/game.mgl"
 SAVE_SCRIPT = "/media/fat/retrospin/save_disc.sh"
@@ -24,7 +28,7 @@ RIPDISC_PATH = "/media/fat/_Utility"
 
 def find_core(system):
     """Find the latest core .rbf file for the given system in /media/fat/_Console/."""
-    prefix = "PSX_" if system == "PSX" else "Saturn_"
+    prefix = {"PSX": "PSX_", "SS": "Saturn_", "mcd": "MegaCD_"}[system]
     try:
         rbf_files = [f for f in os.listdir(MISTER_CORE_DIR) if f.startswith(prefix) and f.endswith(".rbf")]
         if not rbf_files:
@@ -149,26 +153,38 @@ def read_psx_game_id(drive_path):
     finally:
         os.system(f"umount {mount_point} 2>/dev/null")  # Ensure cleanup
 
-def read_saturn_game_id(drive_path):
-    """Read Saturn game serial from disc header at offset 0x20-0x2A on physical disc."""
+def read_sega_game_id(drive_path, system):
+    """Read game serial from disc header for Saturn (0x20-0x2A) or Sega CD (0x180)."""
     try:
         with open(drive_path, 'rb') as f:
             f.seek(0)  # Sector 0
             sector = f.read(2048)
-            game_serial = sector[32:42].decode('ascii', errors='ignore').strip()  # Offset 0x20-0x2A
-            # Validate serial to avoid empty or invalid values
+            if system == "SS":
+                # Saturn: offset 0x20-0x2A (32-42)
+                game_serial = sector[32:42].decode('ascii', errors='ignore').strip()
+            else:  # mcd
+                # Sega CD: offset 0x180 (384-400, row 0180)
+                raw_id = sector[384:400].decode('ascii', errors='ignore').strip()
+                # Extract ID, removing prefixes (e.g., 'GM', 'T-') and suffixes (e.g., '-01')
+                match = re.match(r'^(?:GM|T-)?\s*([A-Z0-9-]+)(?:\s*-\d+)?\s*$', raw_id)
+                game_serial = match.group(1) if match else raw_id
+            # Validate serial
             if not game_serial or game_serial == '\x00' * len(game_serial):
-                print("No valid serial found in disc header (empty or null).")
+                print(f"No valid {system} serial found in disc header (empty or null).")
                 return None
-            print(f"Extracted Saturn Game Serial: {game_serial}")
+            print(f"Extracted {system} Game Serial: {game_serial}")
             return game_serial
     except Exception as e:
-        print(f"Error reading Saturn disc: {e}")
+        print(f"Error reading {system} disc: {e}")
         return None
 
 def find_game_file(title, system):
     """Search for .chd or complete .cue/.bin game files based on system."""
-    paths = PSX_GAME_PATHS if system == "PSX" else SATURN_GAME_PATHS
+    paths = {
+        "PSX": PSX_GAME_PATHS,
+        "SS": SATURN_GAME_PATHS,
+        "mcd": MCD_GAME_PATHS
+    }[system]
     
     # Check for .chd first
     game_filename = f"{title}.chd"
@@ -219,7 +235,7 @@ def create_mgl_file(core_path, game_file, mgl_path, system):
     """Create a temporary MGL file for the game."""
     mgl = ET.Element("mistergamedescription")
     rbf = ET.SubElement(mgl, "rbf")
-    rbf.text = "_console/psx" if system == "PSX" else "_console/saturn"
+    rbf.text = "_console/psx" if system == "PSX" else "_console/saturn" if system == "SS" else "_console/megacd"
     file_tag = ET.SubElement(mgl, "file")
     file_tag.set("delay", "1")
     file_tag.set("type", "s")
@@ -288,8 +304,9 @@ def main():
     
     psx_core = find_core("PSX")
     saturn_core = find_core("SS")
-    if not psx_core and not saturn_core:
-        show_popup("No PSX or Saturn cores found in /media/fat/_Console/.")
+    mcd_core = find_core("mcd")
+    if not psx_core and not saturn_core and not mcd_core:
+        show_popup("No PSX, Saturn, or Mega CD cores found in /media/fat/_Console/.")
         print("Cannot proceed without cores. Exiting...")
         return
     
@@ -329,8 +346,22 @@ def main():
                 time.sleep(1)
                 continue
             
-            # Try Saturn only if PSX fails completely
-            saturn_game_serial = read_saturn_game_id(drive_path)
+            # Try Sega CD
+            mcd_game_serial = read_sega_game_id(drive_path, "mcd")
+            if mcd_game_serial:
+                title = game_titles.get((mcd_game_serial, "mcd"), "Unknown Game")
+                print(f"Found Sega CD game: {title} ({mcd_game_serial})")
+                if mcd_core:
+                    launch_game_on_mister(mcd_game_serial, title, mcd_core, "mcd", drive_path)
+                else:
+                    print("No Sega CD core available to launch game")
+                last_game_serial = (mcd_game_serial, "mcd")
+                last_drive_path = drive_path
+                time.sleep(1)
+                continue
+            
+            # Try Saturn
+            saturn_game_serial = read_sega_game_id(drive_path, "SS")
             if saturn_game_serial:
                 title = game_titles.get((saturn_game_serial, "SS"), "Unknown Game")
                 print(f"Found Saturn game: {title} ({saturn_game_serial})")
