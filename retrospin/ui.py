@@ -26,9 +26,14 @@ def wrap_text(text, width):
 def show_popup(message):
     """Display a popup message on MiSTer."""
     try:
-        dialog_cmd = f"dialog --msgbox \"{message}\" 12 40"
+        if not os.isatty(0):
+            print("No controlling terminal for popup, skipping")
+            return
+        dialog_cmd = f"dialog --msgbox \"{message}\" 12 40 >/dev/tty1"
         print(f"Executing popup command: {dialog_cmd}")
-        subprocess.run(dialog_cmd, shell=True, check=True, env={"TERM": "linux"})
+        env = os.environ.copy()
+        env["TERM"] = "linux"
+        subprocess.run(dialog_cmd, shell=True, check=True, env=env)
     except Exception as e:
         print(f"Failed to display popup: {e}")
 
@@ -36,6 +41,9 @@ def select_game_title(matches, system, serial_key):
     """Prompt user to select a game title from multiple matches."""
     print(f"Multiple matches found for {system} ({serial_key}): {[(serial, title) for serial, title in matches]}")
     try:
+        if not os.isatty(0):
+            print("No controlling terminal for dialog, using first match")
+            return matches[0][1]
         # Sanitize titles for dialog (escape quotes)
         sanitized_matches = [(serial, title.replace('"', '\\"')) for serial, title in matches]
         # Wrap titles to fit dialog width
@@ -44,14 +52,14 @@ def select_game_title(matches, system, serial_key):
         dialog_cmd = f"dialog --menu \"Select game title for {system} disc ({serial_key})\" 20 80 10 "
         for i, (serial, title) in enumerate(wrapped_matches, 1):
             dialog_cmd += f"{i} \"{serial} - {title}\" "
-        dialog_cmd += "2>/tmp/dialog.out"
+        dialog_cmd += "2>/tmp/dialog.out >/dev/tty1"
         print(f"Executing dialog command: {dialog_cmd}")
         
         # Ensure /tmp is writable
         os.makedirs("/tmp", exist_ok=True)
         os.chmod("/tmp", 0o777)
         
-        # Execute dialog directly
+        # Execute dialog in foreground
         env = os.environ.copy()
         env["TERM"] = "linux"
         subprocess.run(dialog_cmd, shell=True, check=True, env=env)

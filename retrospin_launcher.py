@@ -1,5 +1,6 @@
 import os
 import time
+import subprocess
 from retrospin.core import find_core
 from retrospin.database import load_game_titles
 from retrospin.disc import get_optical_drive, is_disc_present, read_saturn_game_id, read_mcd_game_id, read_psx_game_id
@@ -8,6 +9,9 @@ from retrospin.launcher import launch_game_on_mister
 from retrospin.files import find_game_file
 
 def main():
+    # Log terminal environment
+    print(f"Terminal environment: TERM={os.environ.get('TERM', 'unset')}, TTY={os.ttyname(0) if os.isatty(0) else 'none'}")
+    
     print("Starting RetroSpin disc launcher on MiSTer...")
     game_titles = load_game_titles()
     

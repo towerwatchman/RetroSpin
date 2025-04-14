@@ -22,7 +22,7 @@ def read_header(path):
         with open(path, 'rb') as f:
             # Seek to start and read first 256 bytes
             f.seek(0)
-            data = f.read(1024)
+            data = f.read(1000000)
             total_bytes = len(data)
             
             # Print header
@@ -35,7 +35,8 @@ def read_header(path):
                 row_hex = ' '.join(f'{b:02X}' for b in row_data)
                 row_ascii = ''.join(chr(b) if 32 <= b < 127 else ' ' for b in row_data)
                 row_addr = f'{i:04X}'
-                print(f"{row_addr}\t{row_hex:<47}\t{row_ascii}")
+                if "GS" in row_ascii:
+                    print(f"{row_addr}\t{row_hex:<47}\t{row_ascii}")
             
             print(f"Total: {total_bytes} bytes")
             

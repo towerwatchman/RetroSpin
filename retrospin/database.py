@@ -18,12 +18,6 @@ def load_game_titles():
             if (serial, system) not in game_titles:
                 game_titles[(serial, system)] = []
             game_titles[(serial, system)].append((serial, title.strip()))
-            if system == "psx":
-                print(f"Loaded PSX serial: {serial}, title: {title}")
-            elif system == "ss":
-                print(f"Loaded Saturn serial: {serial}, title: {title}")
-            elif system == "mcd":
-                print(f"Loaded Sega CD serial: {serial}, title: {title}")
         print(f"Successfully loaded {sum(len(titles) for titles in game_titles.values())} game titles from {DB_PATH}")
         conn.close()
     except Exception as e:
