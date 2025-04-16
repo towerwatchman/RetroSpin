@@ -1,0 +1,22 @@
+- SEGA SATURN
+
+- SEGA CD
+
+------------------------
+PC-Engine TG-CD        |
+------------------------
+* The first track is always 7729 KB and has no useful data on it.
+* Check Offset 00081C90-00081CE0 for Header data
+* � is newline or CR
+
+SAMPLES:
+Dragon Slayer - The Legend of Heroes    | PC Engine CD-ROM SYSTEM�Copyright HUDSON SOFT / NEC Home Electronics,Ltd.�DRAGON SLAYER VIHudson          |   00081C90-00081CE0
+Valis II                                | PC Engine CD-ROM SYSTEM�Copyright HUDSON SOFT / NEC Home Electronics,Ltd.�MAIN  PROGRAM                   |   00081C90-00081CE0
+Ys Book I & II                          | PC Engine CD-ROM SYSTEM�Copyright HUDSON SOFT / NEC Home Electronics,Ltd.�Ancient Ys Vanished             |   000853B0-00085400
+Beyond Shadowgate                       | PC Engine CD-ROM SYSTEM�Copyright HUDSON SOFT / NEC Home Electronics,Ltd.�                ������      |   00081C90-00081CE0   
+Cosmic Fantasy 2                        | PC Engine CD-ROM SYSTEM�Copyright HUDSON SOFT / NEC Home Electronics,Ltd.�º½ÞÐ¯¸.Ì§ÝÀ¼Þ° 2      v         |   00081C90-00081CE0
+
+IF this is not PC Engine CD-ROM Check next entires
+00081C90 PC Engine CD-ROM
+- PSX
+
