@@ -18,14 +18,21 @@
 ## Status of Features
 > **NOTE**: The list of games beside each system are the total games that have ids and can be identified by this program.
 #### Systems Supported
-- [x] Sony Playstation | 11706 Games
-- [x] Sega Saturn | 2047 Games
-- [ ] Sega Mega CD & Sega CD | 393 Games
-- [ ] Sega 32X CD                                   
-- [ ] Neo Geo CD | 53 Games
 - [ ] NEC PC Engine CD & TurboGrafx CD
 - [ ] Philips CD-i
+- [ ] Commodore CDTV
+- [ ] Sega Mega CD & Sega CD | 393 Games
+- [ ] Sega 32X CD 
+- [ ] Memorex Tandy / VIS CD
 - [ ] Panasonic 3DO Interactive Multiplayer
+- [ ] Commodore AmigaCD32
+- [ ] Fujitsu FM Towns Marty
+- [ ] Pioneer LaserActive
+- [ ] SNK Neo Geo CD | 53 Games
+- [ ] NEC PC-FX
+- [ ] Sony Playstation | 11706 Games
+- [ ] Sega Saturn | 2047 Games
+- [ ] Atari Jaguar CD              
 
 #### Features
 - [ ] Can be installed by running update_all command (Need to create db file)
