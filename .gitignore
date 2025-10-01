@@ -164,3 +164,4 @@ cython_debug/
 *.dat
 DATA!db/retrospin_db.json.zip
 !db/retrospin_db.json.zip
+*.db
