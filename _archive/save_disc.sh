@@ -28,50 +28,6 @@ setup_console() {
     fi
 }
 
-# Kill MiSTer
-kill_mister() {
-    log "Checking for MiSTer process..."
-    ps aux | grep "MiSTer" | grep -v grep > /tmp/mister_ps.log 2>&1
-    MISTER_PID=$(cat /tmp/mister_ps.log | awk '{print $2}' | head -n 1)
-    if [ -n "$MISTER_PID" ]; then
-        log "Killing MiSTer process with PID $MISTER_PID..."
-        kill -9 "$MISTER_PID" 2>/dev/null
-        TIMEOUT=5
-        ELAPSED=0
-        while [ $ELAPSED -lt $TIMEOUT ] && ps aux | grep "MiSTer" | grep -v grep >/dev/null; do
-            sleep 1
-            ELAPSED=$((ELAPSED + 1))
-        done
-        if ! ps aux | grep "MiSTer" | grep -v grep >/dev/null; then
-            log "MiSTer process terminated"
-            rm -f /tmp/mister_ps.log
-            return 0
-        else
-            log "Failed to terminate MiSTer process after $TIMEOUT seconds"
-            rm -f /tmp/mister_ps.log
-            return 1
-        fi
-    else
-        log "No MiSTer process found"
-        rm -f /tmp/mister_ps.log
-        return 0
-    fi
-}
-
-# Relaunch MiSTer
-relaunch_mister() {
-    if [ -x "/media/fat/MiSTer" ]; then
-        log "Relaunching MiSTer process..."
-        /media/fat/MiSTer >/dev/null 2>&1 &
-        sleep 2
-        if ps aux | grep "MiSTer" | grep -v grep >/dev/null; then
-            log "MiSTer relaunched successfully"
-        else
-            log "Failed to relaunch MiSTer"
-        fi
-    fi
-}
-
 # Save disc
 save_disc() {
     case "$SYSTEM" in
@@ -127,13 +83,4 @@ save_disc() {
 
 # Main
 setup_console
-if kill_mister; then
-    save_disc
-    relaunch_mister
-else
-    dialog --msgbox "Failed to stop MiSTer process" 10 40 </dev/tty2 >/dev/tty2 2>/tmp/save_dialog.err
-    if [ -s "/tmp/save_dialog.err" ]; then
-        log "Dialog error: $(cat /tmp/save_dialog.err)"
-        rm -f "/tmp/save_dialog.err"
-    fi
-fi
+save_disc
