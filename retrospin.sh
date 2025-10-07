@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# rertospin - RetroSpin Disc Manager for MiSTer FPGA
+# retrospin - RetroSpin Disc Manager for MiSTer FPGA
 # Dialog menu with options to run core functions
 
 while true; do
@@ -16,10 +16,10 @@ while true; do
 
     clear
     case $CHOICE in
-        1) bash /core/functions/test_disc.sh ;;
-        2) bash /core/functions/save_disc.sh ;;
-        3) bash /core/functions/service.sh ;;
-        4) bash /core/functions/update_db.sh ;;
+        1) bash core/functions/test_disc.sh ;;
+        2) bash core/functions/save_disc.sh ;;
+        3) bash core/functions/service.sh ;;
+        4) python3 core/functions/update_db.py ;;
         *) break ;;
     esac
 done
