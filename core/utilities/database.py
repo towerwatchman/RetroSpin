@@ -1,12 +1,21 @@
 import sqlite3
+import os
 
-DB_PATH = "/media/fat/retrospin/games.db"
+def get_db_path():
+    """Get the absolute path to the games.db file relative to the script's location."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(script_dir, "../../data/games.db")
 
 def load_game_titles():
     """Load game serial to title mappings from SQLite database, allowing multiple matches."""
     game_titles = {}
+    db_path = get_db_path()
     try:
-        conn = sqlite3.connect(DB_PATH)
+        print(f"Using {db_path} for database file")
+        if not os.path.exists(db_path):
+            print(f"Database file not found at {db_path}")
+            return game_titles
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT serial, title, system FROM games")
         rows = cursor.fetchall()
@@ -18,7 +27,7 @@ def load_game_titles():
             if (serial, system) not in game_titles:
                 game_titles[(serial, system)] = []
             game_titles[(serial, system)].append((serial, title.strip()))
-        print(f"Successfully loaded {sum(len(titles) for titles in game_titles.values())} game titles from {DB_PATH}")
+        print(f"Successfully loaded {sum(len(titles) for titles in game_titles.values())} game titles from {db_path}")
         conn.close()
     except Exception as e:
         print(f"Error loading game titles from database: {e}")

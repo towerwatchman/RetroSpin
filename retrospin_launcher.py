@@ -1,12 +1,12 @@
 import os
 import time
 import subprocess
-from retrospin.core import find_core
-from retrospin.database import load_game_titles
-from retrospin.disc import get_optical_drive, is_disc_present, read_saturn_game_id, read_mcd_game_id, read_psx_game_id
-from retrospin.ui import show_popup, select_game_title
-from retrospin.launcher import launch_game_on_mister
-from retrospin.files import find_game_file
+from core.utilities.core import find_cores
+from core.utilities.database import load_game_titles
+from core.utilities.disc import get_optical_drive, is_disc_present, read_saturn_game_id, read_mcd_game_id, read_psx_game_id
+from core.utilities.ui import show_popup, select_game_title
+from core.utilities.launcher import launch_game_on_mister
+from core.utilities.files import find_game_file
 
 def main():
     # Log terminal environment
@@ -15,12 +15,16 @@ def main():
     print("Starting RetroSpin disc launcher on MiSTer...")
     game_titles = load_game_titles()
     
-    psx_core = find_core("psx")
-    saturn_core = find_core("ss")
-    mcd_core = find_core("mcd")
-    if not psx_core and not saturn_core and not mcd_core:
-        show_popup("No PSX, Saturn, or Mega CD cores found in /media/fat/_Console/.")
-        print("Cannot proceed without cores. Exiting...")
+    # Define supported systems (full names for cores, but use DB-normalized keys for lookups)
+    supported_systems = ["psx", "saturn", "megacd", "neogeo", "cdi", "tgcd"]
+    
+    # Find all available cores once
+    available_cores = find_cores(supported_systems)
+    
+    # Check for core support
+    if not any(available_cores.get(system) for system in supported_systems):
+        show_popup("No supported CD-ROM cores (PSX, Saturn, or Mega CD) found in /media/fat/_Console/.")
+        print("Cannot proceed without supported cores. Exiting...")
         return
     
     last_game_serial = None
@@ -44,7 +48,7 @@ def main():
                 serial_key = saturn_game_serial.upper()
                 print(f"Looking up Saturn serial: {serial_key}")
                 matches = []
-                # Check for exact and partial matches
+                # Check for exact and partial matches (using DB-normalized "ss")
                 for (db_serial, db_system), titles in game_titles.items():
                     if db_system == "ss" and (db_serial == serial_key or db_serial.startswith(serial_key)):
                         matches.extend(titles)
@@ -55,41 +59,43 @@ def main():
                     else:
                         title = select_game_title(matches, "Saturn", serial_key)
                     print(f"Found Saturn game: {title} ({saturn_game_serial})")
+                    saturn_core = available_cores.get("saturn")
                     if saturn_core and title != "Unknown Game":
-                        launch_game_on_mister(saturn_game_serial, title, saturn_core, "ss", drive_path, find_game_file)
+                        launch_game_on_mister(saturn_game_serial, title, saturn_core, "saturn", drive_path, find_game_file)
                     else:
                         print(f"No Saturn core or no valid match for {saturn_game_serial}. Skipping.")
                 else:
                     print(f"No database match for Saturn serial {saturn_game_serial}. Skipping.")
-                last_game_serial = (saturn_game_serial, "ss")
+                last_game_serial = (saturn_game_serial, "saturn")
                 last_drive_path = drive_path
                 time.sleep(1)
                 continue
             
-            # Try Sega CD
+            # Try Sega CD (Mega CD)
             mcd_game_serial = read_mcd_game_id(drive_path)
             if mcd_game_serial:
                 serial_key = mcd_game_serial.upper()
-                print(f"Looking up Sega CD serial: {serial_key}")
+                print(f"Looking up Mega CD serial: {serial_key}")
                 matches = []
-                # Check for exact and partial matches
+                # Check for exact and partial matches (using DB-normalized "mcd")
                 for (db_serial, db_system), titles in game_titles.items():
                     if db_system == "mcd" and (db_serial == serial_key or db_serial.startswith(serial_key)):
                         matches.extend(titles)
-                print(f"Sega CD matches found: {len(matches)}")
+                print(f"Mega CD matches found: {len(matches)}")
                 if matches:
                     if len(matches) == 1:
                         title = matches[0][1]
                     else:
-                        title = select_game_title(matches, "Sega CD", serial_key)
-                    print(f"Found Sega CD game: {title} ({mcd_game_serial})")
+                        title = select_game_title(matches, "Mega CD", serial_key)
+                    print(f"Found Mega CD game: {title} ({mcd_game_serial})")
+                    mcd_core = available_cores.get("megacd")
                     if mcd_core and title != "Unknown Game":
-                        launch_game_on_mister(mcd_game_serial, title, mcd_core, "mcd", drive_path, find_game_file)
+                        launch_game_on_mister(mcd_game_serial, title, mcd_core, "megacd", drive_path, find_game_file)
                     else:
-                        print(f"No Sega CD core or no valid match for {mcd_game_serial}. Skipping.")
+                        print(f"No Mega CD core or no valid match for {mcd_game_serial}. Skipping.")
                 else:
-                    print(f"No database match for Sega CD serial {mcd_game_serial}. Skipping.")
-                last_game_serial = (mcd_game_serial, "mcd")
+                    print(f"No database match for Mega CD serial {mcd_game_serial}. Skipping.")
+                last_game_serial = (mcd_game_serial, "megacd")
                 last_drive_path = drive_path
                 time.sleep(1)
                 continue
@@ -118,6 +124,7 @@ def main():
                     else:
                         title = select_game_title(matches, "PSX", serial_key)
                     print(f"Found PSX game: {title} ({psx_game_serial})")
+                    psx_core = available_cores.get("psx")
                     if psx_core:
                         launch_game_on_mister(psx_game_serial, title, psx_core, "psx", drive_path, find_game_file)
                     else:
