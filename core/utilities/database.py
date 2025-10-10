@@ -4,7 +4,12 @@ import os
 def get_db_path():
     """Get the absolute path to the games.db file relative to the script's location."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(script_dir, "../../data/games.db")
+    db_path = os.path.join(script_dir, "../../data/games.db")
+    print(f"Script directory: {script_dir}")
+    print(f"Computed DB path: {db_path}")
+    if not os.path.exists(db_path):
+        print(f"Error: Database file not found at {db_path}")
+    return db_path
 
 def load_game_titles():
     """Load game serial to title mappings from SQLite database, allowing multiple matches."""

@@ -22,10 +22,10 @@ def main():
     available_cores = find_cores(supported_systems)
     
     # Check for core support
-    if not any(available_cores.get(system) for system in supported_systems):
-        show_popup("No supported CD-ROM cores (PSX, Saturn, or Mega CD) found in /media/fat/_Console/.")
-        print("Cannot proceed without supported cores. Exiting...")
-        return
+    #if not any(available_cores.get(system) for system in supported_systems):
+        #show_popup("No supported CD-ROM cores (PSX, Saturn, or Mega CD) found in /media/fat/_Console/.")
+        #print("Cannot proceed without supported cores. Exiting...")
+        #return
     
     last_game_serial = None
     last_drive_path = None
@@ -49,7 +49,7 @@ def main():
                 print(f"Looking up Saturn serial: {serial_key}")
                 matches = []
                 # Check for exact and partial matches (using DB-normalized "ss")
-                for (db_serial, db_system), titles in game_titles.items():
+                for (db_serial, db_system), titles in game_titles.items():                    
                     if db_system == "ss" and (db_serial == serial_key or db_serial.startswith(serial_key)):
                         matches.extend(titles)
                 print(f"Saturn matches found: {len(matches)}")
@@ -75,12 +75,18 @@ def main():
             mcd_game_serial = read_mcd_game_id(drive_path)
             if mcd_game_serial:
                 serial_key = mcd_game_serial.upper()
+                us_serial_key = serial_key.replace("-00","") #unique case
                 print(f"Looking up Mega CD serial: {serial_key}")
                 matches = []
                 # Check for exact and partial matches (using DB-normalized "mcd")
                 for (db_serial, db_system), titles in game_titles.items():
-                    if db_system == "mcd" and (db_serial == serial_key or db_serial.startswith(serial_key)):
+                    if db_system == "mcd" and (db_serial == serial_key or db_serial == us_serial_key):
                         matches.extend(titles)
+                        break
+                    else:
+                        if db_serial.startswith(serial_key):
+                            matches.extend(titles)
+
                 print(f"Mega CD matches found: {len(matches)}")
                 if matches:
                     if len(matches) == 1:
@@ -115,8 +121,12 @@ def main():
                 matches = []
                 # Check for exact and partial matches
                 for (db_serial, db_system), titles in game_titles.items():
-                    if db_system == "psx" and (db_serial == serial_key or db_serial.startswith(serial_key)):
+                    if db_system == "psx" and (db_serial == serial_key):
                         matches.extend(titles)
+                        break
+                    else:
+                        if db_serial.startswith(serial_key):
+                            matches.extend(titles)
                 print(f"PSX matches found: {len(matches)}")
                 if matches:
                     if len(matches) == 1:

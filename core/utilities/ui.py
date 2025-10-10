@@ -26,16 +26,15 @@ def wrap_text(text, width):
 def show_popup(message):
     """Display a popup message on MiSTer."""
     try:
-        if not os.isatty(0):
-            print("No controlling terminal for popup, skipping")
-            return
-        dialog_cmd = f"dialog --msgbox \"{message}\" 12 40 >/dev/tty1"
+        # Use current terminal or omit redirection
+        dialog_cmd = f"dialog --msgbox \"{message}\" 12 40"
         print(f"Executing popup command: {dialog_cmd}")
         env = os.environ.copy()
         env["TERM"] = "linux"
         subprocess.run(dialog_cmd, shell=True, check=True, env=env)
-    except Exception as e:
+    except subprocess.CalledProcessError as e:
         print(f"Failed to display popup: {e}")
+        print(f"Popup message: {message}")
 
 def select_game_title(matches, system, serial_key):
     """Prompt user to select a game title from multiple matches."""
@@ -52,7 +51,7 @@ def select_game_title(matches, system, serial_key):
         dialog_cmd = f"dialog --menu \"Select game title for {system} disc ({serial_key})\" 20 80 10 "
         for i, (serial, title) in enumerate(wrapped_matches, 1):
             dialog_cmd += f"{i} \"{serial} - {title}\" "
-        dialog_cmd += "2>/tmp/dialog.out >/dev/tty1"
+        dialog_cmd += "2>/tmp/dialog.out"
         print(f"Executing dialog command: {dialog_cmd}")
         
         # Ensure /tmp is writable
@@ -64,8 +63,7 @@ def select_game_title(matches, system, serial_key):
         env["TERM"] = "linux"
         subprocess.run(dialog_cmd, shell=True, check=True, env=env)
         
-        # Wait for user input
-        time.sleep(5)
+        # Read dialog output
         if os.path.exists("/tmp/dialog.out"):
             with open("/tmp/dialog.out", "r") as f:
                 choice = f.read().strip()
@@ -79,6 +77,6 @@ def select_game_title(matches, system, serial_key):
                     return selected_title
         print("No valid selection made. Using first match.")
         return matches[0][1]
-    except Exception as e:
+    except subprocess.CalledProcessError as e:
         print(f"Error prompting for title selection: {e}")
         return matches[0][1]
