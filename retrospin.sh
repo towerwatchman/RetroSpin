@@ -28,8 +28,11 @@ ensure_db_writable() {
     chmod 664 "$DB_PATH"
 }
 
+# Run save_disc.py, which handles disc reading and saving
+python3 core/init_database.py 2>/tmp/retrospin_err.log
+
 while true; do
-    CHOICE=$(dialog --clear --backtitle "RetroSpin Disc Manager" \
+    CHOICE=$(dialog --backtitle "RetroSpin Disc Manager" \
                     --title "RetroSpin Disc Manager" \
                     --menu "Select an option:" \
                     15 40 4 \
@@ -39,7 +42,7 @@ while true; do
                     4 "Update Database" \
                     2>&1 >/dev/tty)
 
-    clear
+    #clear
     case $CHOICE in
         1) bash core/functions/test_disc.sh ;;
         2)
@@ -54,7 +57,7 @@ while true; do
         3) python3 core/functions/retrospin_service.py ;;
         4)
             ensure_db_writable
-            python3 core/functions/update_db.py
+            python3 core/update_database.py
             ;;
         *) break ;;
     esac

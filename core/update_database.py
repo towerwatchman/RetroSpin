@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 import sqlite3
 import re
 from datetime import datetime
+from utilities.database import create_table_schema, connect_to_database
 import tempfile
 import subprocess
 import sys
@@ -138,38 +139,6 @@ def ensure_data_dir():
         os.makedirs(DATA_DIR)
     if not os.path.exists(DAT_DIR):
         os.makedirs(DAT_DIR)
-
-def connect_to_database():
-    """Connect to games.db and return connection and cursor."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    return conn, cursor
-
-def ensure_table_schema(cursor):
-    """Ensure games and unknown tables exist with correct schema."""
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS games (
-            serial TEXT,
-            title TEXT,
-            category TEXT,
-            region TEXT,
-            system TEXT,
-            language TEXT,
-            PRIMARY KEY (serial, system)
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS unknown (
-            serial TEXT,
-            title TEXT,
-            category TEXT,
-            region TEXT,
-            system TEXT,
-            language TEXT,
-            timestamp TEXT,
-            PRIMARY KEY (title, system)
-        )
-    ''')
 
 def extract_region_and_language(game_name):
     """Extract region and language from game name."""
@@ -367,7 +336,7 @@ def populate_database():
     """Scrape Redump DAT files for all systems and populate games and unknown tables."""
     ensure_data_dir()
     conn, cursor = connect_to_database()
-    ensure_table_schema(cursor)
+    create_table_schema(cursor)
     
     num_systems = len(SYSTEMS)
     system_share = 100 / num_systems
