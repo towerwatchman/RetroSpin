@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import time
 
 def wrap_text(text, width):
@@ -24,24 +25,45 @@ def wrap_text(text, width):
     return "\\n".join(lines)
 
 def show_popup(message):
-    """Display a popup message on MiSTer."""
+    """Display a popup message on MiSTer with OK button."""
     try:
-        # Use current terminal or omit redirection
-        dialog_cmd = f"dialog --msgbox \"{message}\" 12 40"
-        print(f"Executing popup command: {dialog_cmd}")
+        dialog_cmd = f"dialog --ok-label \"OK\" --msgbox \"{message}\" 12 40"
         env = os.environ.copy()
         env["TERM"] = "linux"
+        # Try current terminal, fallback to /dev/tty
+        tty = os.ttyname(0) if os.isatty(0) else "/dev/tty"
+        dialog_cmd += f" >{tty} 2>/tmp/retrospin_dialog_err.log"
         subprocess.run(dialog_cmd, shell=True, check=True, env=env)
     except subprocess.CalledProcessError as e:
-        print(f"Failed to display popup: {e}")
-        print(f"Popup message: {message}")
+        error_msg = f"Failed to display popup: {e}\nPopup message: {message}"
+        with open("/tmp/retrospin_err.log", "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - ui.py: {error_msg}\n")
+        print(error_msg, file=sys.stderr)
+
+def show_yesno(message):
+    """Display a yes/no prompt on MiSTer, return True for Yes, False for No."""
+    try:
+        dialog_cmd = f"dialog --yesno \"{message}\" 12 60"
+        env = os.environ.copy()
+        env["TERM"] = "linux"
+        # Try current terminal, fallback to /dev/tty
+        tty = os.ttyname(0) if os.isatty(0) else "/dev/tty"
+        dialog_cmd += f" >{tty} 2>/tmp/retrospin_dialog_err.log"
+        result = subprocess.run(dialog_cmd, shell=True, check=True, capture_output=True, env=env)
+        return result.returncode == 0  # 0 for Yes, 1 for No
+    except subprocess.CalledProcessError as e:
+        error_msg = f"Failed to display yes/no prompt: {e}\nYes/No message: {message}"
+        with open("/tmp/retrospin_err.log", "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - ui.py: {error_msg}\n")
+        print(error_msg, file=sys.stderr)
+        return False  # Default to No on error
 
 def select_game_title(matches, system, serial_key):
     """Prompt user to select a game title from multiple matches."""
-    print(f"Multiple matches found for {system} ({serial_key}): {[(serial, title) for serial, title in matches]}")
     try:
         if not os.isatty(0):
-            print("No controlling terminal for dialog, using first match")
+            with open("/tmp/retrospin_err.log", "a") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - ui.py: No controlling terminal for dialog, using first match\n")
             return matches[0][1]
         # Sanitize titles for dialog (escape quotes)
         sanitized_matches = [(serial, title.replace('"', '\\"')) for serial, title in matches]
@@ -52,7 +74,6 @@ def select_game_title(matches, system, serial_key):
         for i, (serial, title) in enumerate(wrapped_matches, 1):
             dialog_cmd += f"{i} \"{serial} - {title}\" "
         dialog_cmd += "2>/tmp/dialog.out"
-        print(f"Executing dialog command: {dialog_cmd}")
         
         # Ensure /tmp is writable
         os.makedirs("/tmp", exist_ok=True)
@@ -61,22 +82,27 @@ def select_game_title(matches, system, serial_key):
         # Execute dialog in foreground
         env = os.environ.copy()
         env["TERM"] = "linux"
+        tty = os.ttyname(0) if os.isatty(0) else "/dev/tty"
+        dialog_cmd += f" >{tty}"
         subprocess.run(dialog_cmd, shell=True, check=True, env=env)
         
         # Read dialog output
         if os.path.exists("/tmp/dialog.out"):
             with open("/tmp/dialog.out", "r") as f:
                 choice = f.read().strip()
-            print(f"Dialog output: {choice}")
             os.remove("/tmp/dialog.out")
             if choice:
                 choice_idx = int(choice) - 1
                 if 0 <= choice_idx < len(matches):
                     selected_serial, selected_title = matches[choice_idx]
-                    print(f"User selected: {selected_serial} - {selected_title}")
+                    with open("/tmp/retrospin_err.log", "a") as f:
+                        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - ui.py: User selected: {selected_serial} - {selected_title}\n")
                     return selected_title
-        print("No valid selection made. Using first match.")
+        with open("/tmp/retrospin_err.log", "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - ui.py: No valid selection made. Using first match.\n")
         return matches[0][1]
     except subprocess.CalledProcessError as e:
-        print(f"Error prompting for title selection: {e}")
+        error_msg = f"Error prompting for title selection: {e}"
+        with open("/tmp/retrospin_err.log", "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - ui.py: {error_msg}\n")
         return matches[0][1]
