@@ -1,4 +1,4 @@
-CXX = arm-linux-gnueabihf-g++
+CXX = arm-none-linux-gnueabihf-g++
 CXXFLAGS = -std=c++11 -O2 -Wall
 LDFLAGS = -lsqlite3
 
