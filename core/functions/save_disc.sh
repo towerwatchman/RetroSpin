@@ -20,8 +20,13 @@ elif [ "$SYSTEM" == "mcd" ]; then
 fi
 RIPDISC_PATH="/media/fat/_Utility"
 
-# Ensure directory exists
-mkdir -p "$BASE_DIR"
+# Ensure USB directories exist
+mkdir -p "$USB_PSX_PATH"
+mkdir -p "$USB_SATURN_PATH"
+mkdir -p "$USB_MCD_PATH"
+
+# Ensure RIPDISC_PATH exists
+mkdir -p "$RIPDISC_PATH"
 
 # Define file paths
 CUE_FILE="$BASE_DIR/$TITLE.cue"
@@ -68,31 +73,6 @@ cleanup() {
 # Trap exit signals
 trap cleanup EXIT INT TERM
 
-# Select dialog console
-SELECTED_CONSOLE="/dev/tty2"
-if [ ! -w "$SELECTED_CONSOLE" ]; then
-    echo "No writable console ($SELECTED_CONSOLE) found for dialogs, skipping prompt"
-    exit 1
-fi
-
-# Log console selection and status
-echo "Console selected: $SELECTED_CONSOLE, TERM=$TERM, TTY=$(tty 2>/dev/null || echo none)"
-ls -l "$SELECTED_CONSOLE" /dev/fb0 2>/dev/null
-stty < "$SELECTED_CONSOLE" 2>/dev/null || echo "Failed to read stty settings for $SELECTED_CONSOLE"
-
-# Set terminal environment
-export TERM=linux
-
-# Reset framebuffer
-if [ -w "/dev/fb0" ]; then
-    cat /dev/zero >/dev/fb0 2>/dev/null || echo "Failed to reset framebuffer"
-fi
-
-# Activate console
-if [ -x "/sbin/chvt" ]; then
-    chvt 2 2>/dev/null || echo "Failed to switch to $SELECTED_CONSOLE"
-fi
-
 # Kill MiSTer process
 if ps aux | grep -E "[/]media/fat/MiSTer" | grep -v grep >/dev/null; then
     echo "Killing MiSTer process..."
@@ -115,20 +95,18 @@ else
     echo "No MiSTer process found, proceeding with dialog"
 fi
 
-# Initialize console
-if [ -w "$SELECTED_CONSOLE" ]; then
-    stty sane < "$SELECTED_CONSOLE" > "$SELECTED_CONSOLE" 2>/dev/null
-    tput init > "$SELECTED_CONSOLE" 2>/dev/null
-    echo -e "\033[?25h" > "$SELECTED_CONSOLE" 2>/dev/null
-fi
+# Clear screen
+clear
 
 # Prompt to save disc
-echo "Executing dialog: Prompt to save disc on $SELECTED_CONSOLE"
-dialog --timeout 30 --yesno "RetroSpin\nGame file not found: $TITLE. Save disc as .bin/.cue to USB?" 12 50 </dev/tty2 >/dev/tty2 2>/tmp/dialog.err
+echo "Executing dialog: Prompt to save disc"
+dialog --clear --backtitle "RetroSpin" --title "RetroSpin" \
+       --yesno "Game file not found: $TITLE. Save disc as .bin/.cue to USB?" \
+       12 50 2>&1 >/dev/tty 2>/tmp/retrospin_err.log
 RESPONSE=$?
-if [ -s "/tmp/dialog.err" ]; then
-    echo "Dialog error: $(cat /tmp/dialog.err)"
-    rm -f "/tmp/dialog.err"
+if [ -s "/tmp/retrospin_err.log" ]; then
+    echo "Dialog error: $(cat /tmp/retrospin_err.log)"
+    rm -f "/tmp/retrospin_err.log"
 fi
 echo "Dialog exit status: $RESPONSE"
 if [ $RESPONSE -ne 0 ]; then
@@ -136,17 +114,24 @@ if [ $RESPONSE -ne 0 ]; then
     exit 0
 fi
 
-clear > "$SELECTED_CONSOLE" 2>/dev/null
+clear
+
 echo "Preparing to save disc to: $CUE_FILE, $BIN_FILE..."
 
-# Verify cdrdao exists
-if [ ! -x "${RIPDISC_PATH}/cdrdao" ]; then
-    echo "Error: cdrdao not found at ${RIPDISC_PATH}/cdrdao"
-    dialog --timeout 30 --msgbox "RetroSpin\nError: cdrdao not found at ${RIPDISC_PATH}/cdrdao" 12 70 </dev/tty2 >/dev/tty2 2>/tmp/dialog.err
+# Find cdrdao executable
+if [ -x "${RIPDISC_PATH}/cdrdao" ]; then
+    CDRDAO="${RIPDISC_PATH}/cdrdao"
+elif [ -x "$(command -v cdrdao)" ]; then
+    CDRDAO="$(command -v cdrdao)"
+else
+    echo "Error: cdrdao not found at ${RIPDISC_PATH}/cdrdao or in PATH"
+    dialog --clear --backtitle "RetroSpin" --title "RetroSpin" \
+           --msgbox "Error: cdrdao not found at ${RIPDISC_PATH}/cdrdao or in PATH" \
+           12 70 2>&1 >/dev/tty 2>/tmp/retrospin_err.log
     RESPONSE=$?
-    if [ -s "/tmp/dialog.err" ]; then
-        echo "Dialog error: $(cat /tmp/dialog.err)"
-        rm -f "/tmp/dialog.err"
+    if [ -s "/tmp/retrospin_err.log" ]; then
+        echo "Dialog error: $(cat /tmp/retrospin_err.log)"
+        rm -f "/tmp/retrospin_err.log"
     fi
     exit 1
 fi
@@ -155,7 +140,7 @@ fi
 TEMP_LOG="/tmp/retrospin_cdrdao.log"
 TOC_FILE="/tmp/retrospin_temp.toc"
 echo "Reading TOC data to detect disc size, logging to $TEMP_LOG..."
-${RIPDISC_PATH}/cdrdao read-toc --device "$DRIVE_PATH" "$TOC_FILE" 2>&1 | tee "$TEMP_LOG"
+$CDRDAO read-toc --device "$DRIVE_PATH" "$TOC_FILE" 2>&1 | tee "$TEMP_LOG"
 CDRDAO_STATUS=$?
 if [ -f "$TEMP_LOG" ]; then
     # Parse leadout sector count from output (e.g., "Leadout ... (211574)")
@@ -177,11 +162,13 @@ if [ -f "$TEMP_LOG" ]; then
     fi
 else
     echo "Failed to capture TOC data (no log created), falling back to blockdev..."
-    dialog --timeout 30 --msgbox "RetroSpin\nWarning: Failed to read TOC data for size detection\nFalling back to blockdev..." 12 70 </dev/tty2 >/dev/tty2 2>/tmp/dialog.err
+    dialog --clear --backtitle "RetroSpin" --title "RetroSpin" \
+           --msgbox "Warning: Failed to read TOC data for size detection\nFalling back to blockdev..." \
+           12 70 2>&1 >/dev/tty 2>/tmp/retrospin_err.log
     RESPONSE=$?
-    if [ -s "/tmp/dialog.err" ]; then
-        echo "Dialog error: $(cat /tmp/dialog.err)"
-        rm -f "/tmp/dialog.err"
+    if [ -s "/tmp/retrospin_err.log" ]; then
+        echo "Dialog error: $(cat /tmp/retrospin_err.log)"
+        rm -f "/tmp/retrospin_err.log"
     fi
     DISC_SIZE=$(blockdev --getsize64 "$DRIVE_PATH" 2>/dev/null)
     if [ -n "$DISC_SIZE" ] && [ "$DISC_SIZE" -gt 0 ]; then
@@ -197,17 +184,19 @@ fi
 DISC_SIZE_MB=$(echo "scale=1; $DISC_SIZE / 1024 / 1024" | bc)
 
 # Show debug info dialog before copying
-echo "Executing dialog: Save disc info on $SELECTED_CONSOLE"
-dialog --timeout 30 --msgbox "RetroSpin\nPreparing to save disc...\nDrive: $DRIVE_PATH\nSystem: $SYSTEM_NAME\nSize: $DISC_SIZE_MB MB\nOutput: $CUE_FILE" 12 70 </dev/tty2 >/dev/tty2 2>/tmp/dialog.err
+echo "Executing dialog: Save disc info"
+dialog --clear --backtitle "RetroSpin" --title "RetroSpin" \
+       --msgbox "Preparing to save disc...\nDrive: $DRIVE_PATH\nSystem: $SYSTEM_NAME\nSize: $DISC_SIZE_MB MB\nOutput: $CUE_FILE" \
+       12 70 2>&1 >/dev/tty 2>/tmp/retrospin_err.log
 RESPONSE=$?
-if [ -s "/tmp/dialog.err" ]; then
-    echo "Dialog error: $(cat /tmp/dialog.err)"
-    rm -f "/tmp/dialog  echo "Disc size detected via blockdev: $DISC_SIZE bytes" > /dev/null
+if [ -s "/tmp/retrospin_err.log" ]; then
+    echo "Dialog error: $(cat /tmp/retrospin_err.log)"
+    rm -f "/tmp/retrospin_err.log"
 fi
 
 # Start cdrdao in background, using maximum read speed
 START_TIME=$(date +%s)
-${RIPDISC_PATH}/cdrdao read-cd --read-raw --speed max --datafile "$BIN_FILE" --device "$DRIVE_PATH" --driver generic-mmc-raw "$TOC_FILE" > /dev/null 2>&1 &
+$CDRDAO read-cd --read-raw --speed max --datafile "$BIN_FILE" --device "$DRIVE_PATH" --driver generic-mmc-raw "$TOC_FILE" > /dev/null 2>&1 &
 CDRDAO_PID=$!
 
 # Wait for copying to start or timeout
@@ -219,7 +208,7 @@ while [ $ELAPSED -lt $TIMEOUT ] && ! [ -f "$BIN_FILE" ]; do
 done
 
 # Progress gauge with dynamic time, size, and transfer rate
-echo "Executing dialog: Progress gauge on $SELECTED_CONSOLE"
+echo "Executing dialog: Progress gauge"
 ( while kill -0 $CDRDAO_PID 2>/dev/null; do
     if [ -f "$BIN_FILE" ]; then
         CURRENT_SIZE=$(stat -c %s "$BIN_FILE" 2>/dev/null || echo 0)
@@ -258,11 +247,11 @@ echo "Executing dialog: Progress gauge on $SELECTED_CONSOLE"
         echo "XXX"
         sleep 10
     fi
-done ) | dialog --gauge "RetroSpin" 12 70 0 </dev/tty2 >/dev/tty2 2>/tmp/dialog.err
+done ) | dialog --gauge "RetroSpin" 12 70 0 2>&1 >/dev/tty 2>/tmp/retrospin_err.log
 RESPONSE=$?
-if [ -s "/tmp/dialog.err" ]; then
-    echo "Dialog error: $(cat /tmp/dialog.err)"
-    rm -f "/tmp/dialog.err"
+if [ -s "/tmp/retrospin_err.log" ]; then
+    echo "Dialog error: $(cat /tmp/retrospin_err.log)"
+    rm -f "/tmp/retrospin_err.log"
 fi
 
 # Wait for cdrdao to finish and check status
@@ -271,20 +260,40 @@ CDRDAO_STATUS=$?
 if [ $CDRDAO_STATUS -eq 0 ]; then
     echo "Save to USB complete"
 
+    # Find toc2cue executable
+    if [ -x "${RIPDISC_PATH}/toc2cue" ]; then
+        TOC2CUE="${RIPDISC_PATH}/toc2cue"
+    elif [ -x "$(command -v toc2cue)" ]; then
+        TOC2CUE="$(command -v toc2cue)"
+    else
+        echo "Error: toc2cue not found at ${RIPDISC_PATH}/toc2cue or in PATH"
+        dialog --clear --backtitle "RetroSpin" --title "RetroSpin" \
+               --msgbox "Error: toc2cue not found at ${RIPDISC_PATH}/toc2cue or in PATH" \
+               12 70 2>&1 >/dev/tty 2>/tmp/retrospin_err.log
+        RESPONSE=$?
+        if [ -s "/tmp/retrospin_err.log" ]; then
+            echo "Dialog error: $(cat /tmp/retrospin_err.log)"
+            rm -f "/tmp/retrospin_err.log"
+        fi
+        exit 1
+    fi
+
     # Convert .toc to .cue
     if [ -f "$TOC_FILE" ]; then
         echo "Converting .toc to .cue: $CUE_FILE"
-        ${RIPDISC_PATH}/toc2cue "$TOC_FILE" "$CUE_FILE" > /dev/null 2>&1
+        $TOC2CUE "$TOC_FILE" "$CUE_FILE" > /dev/null 2>&1
         if [ -f "$CUE_FILE" ]; then
             sed -i "s|$BIN_FILE|$TITLE.bin|g" "$CUE_FILE"  # Replace full path with filename
             echo "Successfully created .cue file: $CUE_FILE"
         else
             echo "Error: Failed to create .cue file: $CUE_FILE"
-            dialog --timeout 30 --msgbox "RetroSpin\nError: Failed to create .cue file\n.bin file saved at $BIN_FILE" 12 70 </dev/tty2 >/dev/tty2 2>/tmp/dialog.err
+            dialog --clear --backtitle "RetroSpin" --title "RetroSpin" \
+                   --msgbox "Error: Failed to create .cue file\n.bin file saved at $BIN_FILE" \
+                   12 70 2>&1 >/dev/tty 2>/tmp/retrospin_err.log
             RESPONSE=$?
-            if [ -s "/tmp/dialog.err" ]; then
-                echo "Dialog error: $(cat /tmp/dialog.err)"
-                rm -f "/tmp/dialog.err"
+            if [ -s "/tmp/retrospin_err.log" ]; then
+                echo "Dialog error: $(cat /tmp/retrospin_err.log)"
+                rm -f "/tmp/retrospin_err.log"
             fi
             rm -f "$TOC_FILE"
             exit 1
@@ -294,11 +303,13 @@ if [ $CDRDAO_STATUS -eq 0 ]; then
         echo "Removed temporary .toc file: $TOC_FILE"
     else
         echo "Error: .toc file missing after cdrdao: $TOC_FILE"
-        dialog --timeout 30 --msgbox "RetroSpin\nError: .toc file missing\n.bin file saved at $BIN_FILE" 12 70 </dev/tty2 >/dev/tty2 2>/tmp/dialog.err
+        dialog --clear --backtitle "RetroSpin" --title "RetroSpin" \
+               --msgbox "Error: .toc file missing\n.bin file saved at $BIN_FILE" \
+               12 70 2>&1 >/dev/tty 2>/tmp/retrospin_err.log
         RESPONSE=$?
-        if [ -s "/tmp/dialog.err" ]; then
-            echo "Dialog error: $(cat /tmp/dialog.err)"
-            rm -f "/tmp/dialog.err"
+        if [ -s "/tmp/retrospin_err.log" ]; then
+            echo "Dialog error: $(cat /tmp/retrospin_err.log)"
+            rm -f "/tmp/retrospin_err.log"
         fi
         exit 1
     fi
@@ -317,12 +328,13 @@ else
 fi
 
 # Prompt user to close and restart launcher
-echo "Executing dialog: Final message on $SELECTED_CONSOLE"
-dialog --timeout 30 --msgbox "RetroSpin\n$FINAL_MESSAGE" 12 50 </dev/tty2 >/dev/tty2 2>/tmp/dialog.err
+echo "Executing dialog: Final message"
+dialog --clear --backtitle "RetroSpin" --title "RetroSpin" \
+       --msgbox "RetroSpin\n$FINAL_MESSAGE" 12 50 2>&1 >/dev/tty 2>/tmp/retrospin_err.log
 RESPONSE=$?
-if [ -s "/tmp/dialog.err" ]; then
-    echo "Dialog error: $(cat /tmp/dialog.err)"
-    rm -f "/tmp/dialog.err"
+if [ -s "/tmp/retrospin_err.log" ]; then
+    echo "Dialog error: $(cat /tmp/retrospin_err.log)"
+    rm -f "/tmp/retrospin_err.log"
 fi
 
 # Restart launcher via retrospin.sh

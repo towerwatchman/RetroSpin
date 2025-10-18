@@ -47,7 +47,7 @@ while true; do
         1) bash core/functions/test_disc.sh ;;
         2)
             # Run save_disc.py, which handles disc reading and saving
-            python3 core/functions/save_disc.py 2>/tmp/retrospin_err.log
+            python3 core/save_disc.py 2>/tmp/retrospin_err.log
             if [ $? -ne 0 ]; then
                 error_msg=$(cat /tmp/retrospin_err.log)
                 dialog --msgbox "RetroSpin\nError saving disc: $error_msg" 10 50 2>/tmp/retrospin_err.log || echo "Error saving disc: $error_msg" >&2
