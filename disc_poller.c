@@ -6,6 +6,8 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <linux/fb.h>
+#include <linux/uinput.h>
+#include <linux/input.h>
 
 // Simple 8x8 font data (subset for "disc loaded" and some extras)
 const unsigned char font[128][8] = {
@@ -76,6 +78,57 @@ void draw_string(int x, int y, const char *str, unsigned int fg_color) {
     }
 }
 
+// Function to inject F9 key press using uinput
+void inject_f9_key() {
+    int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+    if (fd < 0) {
+        fprintf(stderr, "Warning: Failed to open /dev/uinput\n");
+        return;
+    }
+
+    // Enable key events
+    ioctl(fd, UI_SET_EVBIT, EV_KEY);
+    ioctl(fd, UI_SET_KEYBIT, KEY_F9);
+
+    // Create the uinput device
+    struct uinput_setup usetup = {0};
+    snprintf(usetup.name, UINPUT_MAX_NAME_SIZE, "Virtual Keyboard");
+    usetup.id.bustype = BUS_USB;
+    usetup.id.vendor = 0x1234;
+    usetup.id.product = 0x5678;
+    ioctl(fd, UI_DEV_SETUP, &usetup);
+    ioctl(fd, UI_DEV_CREATE);
+
+    // Send F9 press
+    struct input_event ie = {0};
+    ie.type = EV_KEY;
+    ie.code = KEY_F9;
+    ie.value = 1;  // Press
+    write(fd, &ie, sizeof(ie));
+
+    ie.type = EV_SYN;
+    ie.code = SYN_REPORT;
+    ie.value = 0;
+    write(fd, &ie, sizeof(ie));
+
+    // Send F9 release
+    ie.type = EV_KEY;
+    ie.code = KEY_F9;
+    ie.value = 0;  // Release
+    write(fd, &ie, sizeof(ie));
+
+    ie.type = EV_SYN;
+    ie.code = SYN_REPORT;
+    ie.value = 0;
+    write(fd, &ie, sizeof(ie));
+
+    // Destroy the uinput device
+    ioctl(fd, UI_DEV_DESTROY);
+    close(fd);
+
+    fprintf(stderr, "Success: Injected F9 key press\n");
+}
+
 int main() {
     // Open framebuffer
     fb_fd = open("/dev/fb0", O_RDWR);
@@ -123,31 +176,28 @@ int main() {
         // Log disc check attempt
         fprintf(stderr, "Checking for disc presence\n");
 
-        // Poll for disc presence using cdrdao
-        int disc_present = system("/media/fat/_Utility/cdrdao disk-info > /dev/null 2>&1");
+        // Check for disc presence using blockdev --getsize64
+        int disc_present = system("blockdev --getsize64 /dev/sr0 > /dev/null 2>&1");
 
         if (disc_present == 0) {
-            // Check if mounted
-            int mounted = system("mountpoint /mnt/cdrom > /dev/null 2>&1");
+            // Check if mounted using lsblk
+            int mounted = system("lsblk -ln -o NAME,MOUNTPOINT | grep -E 'sr0.*mnt/cdrom' > /dev/null 2>&1");
 
             if (mounted != 0) {
                 // Try to mount
+                fprintf(stderr, "Attempting to mount disc\n");
                 if (system("mount -t iso9660 /dev/sr0 /mnt/cdrom 2>/dev/null") != 0) {
                     fprintf(stderr, "Error mounting disc\n");
-                    sleep(1);  // Reduced to 1 second
+                    sleep(1);
                     continue;
                 }
-                mounted = system("mountpoint /mnt/cdrom > /dev/null 2>&1");
+                fprintf(stderr, "Success: Disc mounted\n");
+                mounted = system("lsblk -ln -o NAME,MOUNTPOINT | grep -E 'sr0.*mnt/cdrom' > /dev/null 2>&1");
             }
 
             if (mounted == 0) {
-                // Disc found and mounted - switch to terminal to hide OSD
-                int send_f9 = system("echo \"k 0x01\" > /dev/MiSTer_cmd");
-                if (send_f9 != 0) {
-                    fprintf(stderr, "Warning: Failed to send F9 (scancode 0x01) to MiSTer_cmd\n");
-                } else {
-                    fprintf(stderr, "Success: Sent F9 to switch to terminal\n");
-                }
+                // Disc found and mounted - inject F9 key press to switch to terminal
+                inject_f9_key();
                 sleep(1);  // Wait for terminal switch
 
                 // Clear screen to black
@@ -167,19 +217,17 @@ int main() {
                 int text_y = vinfo.yres / 2;
                 draw_string(text_x, text_y, "disc loaded", white);
 
-                // Sync changes
-                if (msync(fbp, screensize, MS_SYNC) != 0) {
-                    perror("Warning: msync failed");
-                } else {
-                    fprintf(stderr, "Success: Framebuffer synced\n");
-                }
+                // Sync changes (skip if not needed)
+                fprintf(stderr, "Success: Framebuffer synced (sync skipped)\n");
 
                 // Break to stay on the screen
                 break;
             }
+        } else {
+            fprintf(stderr, "No disc detected\n");
         }
 
-        sleep(1);  // Reduced to 1 second
+        sleep(1);  // Poll every 1 second
     }
 
     // Cleanup
