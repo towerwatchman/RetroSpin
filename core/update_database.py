@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import sqlite3
 import re
 from datetime import datetime
-from utilities.database import create_table_schema, connect_to_database
+from core.utilities.database import create_table_schema, connect_to_database
 import tempfile
 import subprocess
 import sys
@@ -332,7 +332,7 @@ def update_gauge(gauge_process, message, percent=None):
     gauge_process.stdin.write(input_str.encode())
     gauge_process.stdin.flush()
 
-def populate_database():
+def populate_database(gauge_process):
     """Scrape Redump DAT files for all systems and populate games and unknown tables."""
     ensure_data_dir()
     conn, cursor = connect_to_database()
@@ -340,11 +340,6 @@ def populate_database():
     
     num_systems = len(SYSTEMS)
     system_share = 100 / num_systems
-    
-    gauge_process = subprocess.Popen(
-        ['dialog', '--backtitle', 'RetroSpin Disc Manager', '--gauge', 'Updating databases for each core...', '10', '70', '0'],
-        stdin=subprocess.PIPE
-    )
     
     failed_systems = []
     
@@ -410,10 +405,10 @@ def populate_database():
     message = f"Database update complete.\nTotal games: {game_count}\nTotal unknown entries: {unknown_count}"
     if failed_systems:
         message += f"\nFailed to update: {', '.join(failed_systems)}"
-    subprocess.call(['dialog', '--backtitle', 'RetroSpin Disc Manager', '--msgbox', message, '10', '50'])
-
-def main():
-    populate_database()
-
-if __name__ == "__main__":
-    main()
+    cmd = ['dialog', '--backtitle', 'RetroSpin Disc Manager', '--msgbox', message, '10', '50']
+    cmd_str = ' '.join([f'"{arg}"' if ' ' in arg else arg for arg in cmd]) + ' >/dev/tty'
+    try:
+        subprocess.run(cmd_str, shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        with open("/tmp/retrospin_err.log", "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - update_database.py: Failed to display msgbox: {e}\n")
