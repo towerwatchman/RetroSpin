@@ -46,6 +46,6 @@
 Add the following entries to `/media/fat/downloader.ini`:
 ```ini
 [mister_retrospin]
-db_url = 'https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/db/retrospin_db.json.zip'
+db_url = https://raw.githubusercontent.com/towerwatchman/MiSTer_RetroSpin/main/db/retrospin_db.json
 ```
 ## Usage
