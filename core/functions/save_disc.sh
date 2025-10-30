@@ -73,28 +73,6 @@ cleanup() {
 # Trap exit signals
 trap cleanup EXIT INT TERM
 
-# Kill MiSTer process
-if ps aux | grep -E "[/]media/fat/MiSTer" | grep -v grep >/dev/null; then
-    echo "Killing MiSTer process..."
-    ps aux | grep -E "[/]media/fat/MiSTer" | grep -v grep | awk '{print $2}' | while read -r pid; do
-        kill "$pid" 2>/dev/null
-    done
-    TIMEOUT=5
-    ELAPSED=0
-    while [ $ELAPSED -lt $TIMEOUT ] && ps aux | grep -E "[/]media/fat/MiSTer" | grep -v grep >/dev/null; do
-        sleep 1
-        ELAPSED=$((ELAPSED + 1))
-    done
-    if ! ps aux | grep -E "[/]media/fat/MiSTer" | grep -v grep >/dev/null; then
-        echo "MiSTer process terminated"
-    else
-        echo "Failed to terminate MiSTer process after $TIMEOUT seconds"
-        exit 1
-    fi
-else
-    echo "No MiSTer process found, proceeding with dialog"
-fi
-
 # Clear screen
 clear
 
@@ -339,5 +317,5 @@ fi
 
 # Restart launcher via retrospin.sh
 echo "Restarting RetroSpin launcher via retrospin.sh..."
-/media/fat/Scripts/retrospin.sh
+/media/fat/Scripts/retrospin_service.sh
 exit 0

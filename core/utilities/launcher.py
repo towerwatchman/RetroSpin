@@ -1,6 +1,7 @@
 import os
 import subprocess
 import xml.etree.ElementTree as ET
+from core.utilities.save import save_disc
 
 MISTER_CMD = "/dev/MiSTer_cmd"
 TMP_MGL_PATH = "/tmp/game.mgl"

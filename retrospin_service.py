@@ -44,7 +44,7 @@ def main():
             
             # Try Saturn
             saturn_game_serial = read_saturn_game_id(drive_path)
-            if saturn_game_serial:
+            if saturn_game_serial is not None:
                 serial_key = saturn_game_serial.upper()
                 print(f"Looking up Saturn serial: {serial_key}")
                 matches = []
@@ -68,12 +68,12 @@ def main():
                     print(f"No database match for Saturn serial {saturn_game_serial}. Skipping.")
                 last_game_serial = (saturn_game_serial, "saturn")
                 last_drive_path = drive_path
-                time.sleep(1)
+                #time.sleep(1)
                 continue
             
             # Try Sega CD (Mega CD)
             mcd_game_serial = read_mcd_game_id(drive_path)
-            if mcd_game_serial:
+            if mcd_game_serial is not None:
                 serial_key = mcd_game_serial.upper()
                 us_serial_key = serial_key.replace("-00","") #unique case
                 print(f"Looking up Mega CD serial: {serial_key}")
@@ -103,7 +103,7 @@ def main():
                     print(f"No database match for Mega CD serial {mcd_game_serial}. Skipping.")
                 last_game_serial = (mcd_game_serial, "megacd")
                 last_drive_path = drive_path
-                time.sleep(1)
+                #time.sleep(1)
                 continue
             
             # Try PSX
