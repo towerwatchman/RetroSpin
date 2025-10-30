@@ -174,6 +174,11 @@ def save_disc(drive_path, title, system):
     start_time = time.time()
     last_update = 0
 
+    # Initial text with all fields, blanks for missing
+    text = f"RetroSpin\nSaving {title}...\nSaved:  \nEstimated time remaining:  \nTransfer rate: "
+    gauge_proc.stdin.write(f"XXX\n0\n{text}\nXXX\n")
+    gauge_proc.stdin.flush()
+
     try:
         while cdrdao_proc.poll() is None:
             time.sleep(1)
