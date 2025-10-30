@@ -136,4 +136,5 @@ if __name__ == "__main__":
         with open("/tmp/retrospin_err.log", "a") as f:
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - retrospin.py: {error_msg}\n")
         show_message(error_msg, title="Retrospin")
+        
         sys.exit(1)

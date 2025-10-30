@@ -107,7 +107,6 @@ def main():
                 continue
             
             # Try PSX
-            psx_game_serial = None
             for attempt in range(2):
                 psx_game_serial = read_psx_game_id(drive_path)
                 if psx_game_serial:

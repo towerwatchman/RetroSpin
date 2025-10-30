@@ -74,7 +74,7 @@ def read_psx_game_id(drive_path):
             if mount_result != 0:
                 log(f"Failed to mount {drive_path} with iso9660 or udf. Return code: {mount_result}")
                 show_message(f"Failed to mount disc: Return code {mount_result}", title="Retrospin")
-                return None, None
+                return None
             else:
                 log(f"Successfully mounted {drive_path} with udf")
         else:
@@ -123,16 +123,60 @@ def read_psx_game_id(drive_path):
         if not game_serial:
             log("system.cnf not found on disc (checked all case variations).")
             show_message("No system.cnf found on disc.", title="Retrospin")
-        return game_serial, disc_name or "Unknown"
+        return game_serial
     except Exception as e:
         log(f"Error reading PSX disc: {e}")
         show_message(f"Error reading PSX disc: {str(e)}", title="Retrospin")
-        return None, None
+        return None
     finally:
         if is_mounted(drive_path, mount_point):
             log(f"Final cleanup: Forcing unmount of {mount_point}")
             os.system(f"umount -f {mount_point} 2>/dev/null")
 
+def read_saturn_game_id(drive_path):
+    """Read Saturn game serial from disc header (offset 0x20-0x2A)."""
+    try:
+        with open(drive_path, 'rb') as f:
+            f.seek(0)  # Sector 0
+            sector = f.read(2048)
+            # Saturn: offset 0x20-0x2A (32-42)
+            raw_id = sector[32:42].decode('ascii', errors='ignore').strip()
+            print(f"Saturn raw serial: {repr(raw_id)}")
+            # Match formats like T-12345, MK-81009, GS-9051
+            match = re.match(r'^[A-Z0-9]+-[A-Z0-9]+$', raw_id)
+            game_serial = raw_id if match else None
+            # Validate serial
+            if not game_serial or not re.match(r'^[A-Z0-9]+-[A-Z0-9]+$', game_serial):
+                print("No valid Saturn serial found in disc header (invalid or empty).")
+                return None
+            print(f"Extracted Saturn Game Serial: {game_serial}")
+            return game_serial
+    except Exception as e:
+        print(f"Error reading Saturn disc: {e}")
+        return None
+
+def read_mcd_game_id(drive_path):
+    """Read Sega CD game serial from disc header (offset 0x180)."""
+    try:
+        with open(drive_path, 'rb') as f:
+            f.seek(0)  # Sector 0
+            sector = f.read(2048)
+            # Sega CD: offset 0x180 (384-400)
+            raw_id = sector[384:400].decode('ascii', errors='ignore').strip()
+            print(f"Sega CD raw serial: {repr(raw_id)}")
+            # Match formats like T-70065, GM-12345, or raw serials (e.g., 12345)
+            match = re.match(r'^(?:GM|T-)?\s*([A-Z0-9-]+)(?:\s*-\d+)?\s*$', raw_id)
+            game_serial = match.group(1) if match else None
+            # Validate serial
+            if not game_serial or not re.match(r'^[A-Z0-9-]+$', game_serial):
+                print("No valid Sega CD serial found in disc header (invalid or empty).")
+                return None
+            print(f"Extracted Sega CD Game Serial: {game_serial}")
+            return game_serial
+    except Exception as e:
+        print(f"Error reading Sega CD disc: {e}")
+        return None
+    
 def read_disc():
     """Read the optical disc and return drive path, title, system, and serial."""
     drive_path = get_optical_drive()
