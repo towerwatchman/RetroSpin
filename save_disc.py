@@ -2,8 +2,8 @@ import os
 import subprocess
 import sys
 import time
-from utilities.files import find_game_file
-from utilities.disc import read_disc
+from core.utilities.files import find_game_file
+from core.utilities.disc import read_disc
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 script_path = os.path.join(script_dir,"functions", "save_disc.sh")

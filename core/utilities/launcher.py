@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 
 MISTER_CMD = "/dev/MiSTer_cmd"
 TMP_MGL_PATH = "/tmp/game.mgl"
-SAVE_SCRIPT = "/media/fat/retrospin/save_disc.sh"
+SAVE_SCRIPT = "/media/fat/retrospin/core/functions/save_disc.sh"
 
 def create_mgl_file(core_path, game_file, mgl_path, system):
     """Create a temporary MGL file for the game."""

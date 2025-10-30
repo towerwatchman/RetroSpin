@@ -7,8 +7,9 @@ from core.utilities.ui import show_message
 
 def log(message):
     """Log messages to /tmp/retrospin_err.log instead of console."""
-    with open("/tmp/retrospin_err.log", "a") as f:
-        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - disc.py: {message}\n")
+    print(message)
+    #with open("/tmp/retrospin_err.log", "a") as f:
+    #    f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - disc.py: {message}\n")
 
 def get_optical_drive():
     """Detect an optical drive on MiSTer using lsblk."""
@@ -84,16 +85,16 @@ def read_psx_game_id(drive_path):
         system_cnf_variants = ["system.cnf", "SYSTEM.CNF", "System.cnf"]
         for root, dirs, files in os.walk(mount_point):
             # Try to get disc name from filesystem (volume label or directory)
-            try:
-                disc_name = os.path.basename(root) if root != mount_point else None
-                if not disc_name:
-                    # Try volume label via blkid
-                    result = subprocess.run(['blkid', drive_path], capture_output=True, text=True)
-                    match = re.search(r'LABEL="([^"]+)"', result.stdout)
-                    if match:
-                        disc_name = match.group(1)
-            except Exception as e:
-                log(f"Error getting disc name: {e}")
+            #try:
+            #    disc_name = os.path.basename(root) if root != mount_point else None
+            #    if not disc_name:
+            #        # Try volume label via blkid
+            #        result = subprocess.run(['blkid', drive_path], capture_output=True, text=True)
+            #        match = re.search(r'LABEL="([^"]+)"', result.stdout)
+            #        if match:
+            #            disc_name = match.group(1)
+            #except Exception as e:
+            #    log(f"Error getting disc name: {e}")
             
             for variant in system_cnf_variants:
                 if variant in files:

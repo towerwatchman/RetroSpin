@@ -18,7 +18,7 @@ elif [ "$SYSTEM" == "mcd" ]; then
     BASE_DIR="$USB_MCD_PATH"
     SYSTEM_NAME="Sega CD"
 fi
-RIPDISC_PATH="/media/fat/_Utility"
+RIPDISC_PATH="/usr/bin"
 
 # Ensure USB directories exist
 mkdir -p "$USB_PSX_PATH"
