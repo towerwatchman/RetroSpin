@@ -1,144 +1,279 @@
+#!/usr/bin/env python3
 import os
-from pathlib import Path
-import subprocess
 import re
+import sys
 import time
-from core.utilities.ui import show_message, yes_no_prompt, show_progress
+import signal
+import subprocess
+import shutil
 
-CDRDAO_PATH = "/media/fat/_Utility/cdrdao"
-TOC2CUE_PATH = "/media/fat/_Utility/toc2cue"
-TEMP_LOG = "/tmp/retrospin_cdrdao.log"
-TOC_FILE = "/tmp/retrospin_temp.toc"
+# Global state for cleanup
+cdrdao_proc = None
+toc_file = None
+bin_file = None
+temp_log = "/tmp/retrospin_cdrdao.log"
+err_log = "/tmp/retrospin_err.log"
 
-def get_usb_drive():
-    """Find a mounted USB drive."""
-    try:
-        result = subprocess.run(["lsblk", "-o", "NAME,MOUNTPOINT"], capture_output=True, text=True)
-        for line in result.stdout.splitlines():
-            if "/media/usb" in line:
-                parts = line.split()
-                return f"/media/{parts[1]}"
-        return None
-    except:
-        return None
-
-def get_disc_size_toc(drive_path):
-    """
-    Estimate disc size from TOC using cdrdao.
-    Falls back to blockdev, then 700MB.
-    Returns size in bytes (int).
-    """
-    # Ensure temp directory exists
-    Path("/tmp").mkdir(exist_ok=True)
-
-    # Clean up any existing TOC/log files to prevent cdrdao overwrite error
-    for path in [TOC_FILE, TEMP_LOG]:
+def cleanup():
+    global cdrdao_proc, toc_file, bin_file
+    if cdrdao_proc and cdrdao_proc.poll() is None:
+        print(f"Terminating cdrdao process {cdrdao_proc.pid}...")
+        cdrdao_proc.terminate()
         try:
-            if os.path.exists(path):
-                os.unlink(path)
-        except Exception as e:
-            print(f"Warning: Could not delete {path}: {e}")
+            cdrdao_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            cdrdao_proc.kill()
+            cdrdao_proc.wait()
 
-    print(f"Reading TOC data to detect disc size, logging to {TEMP_LOG}...")
+    for path in [toc_file, bin_file, temp_log]:
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+                print(f"Removed partial file: {path}")
+            except Exception as e:
+                print(f"Failed to remove {path}: {e}")
 
-    # Run cdrdao
-    try:
-        result = subprocess.run(
-            ["cdrdao", "read-toc", "--device", drive_path, TOC_FILE],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=60
-        )
-        output = result.stdout
-        cdrdao_status = result.returncode
+import atexit
+atexit.register(cleanup)
 
-        # Save log and print (tee behavior)
-        with open(TEMP_LOG, "w") as lf:
-            lf.write(output)
-        print(output)
+def _signal_handler(sig, frame):
+    print(f"\nReceived signal {sig}, cleaning up...")
+    cleanup()
+    sys.exit(0)
 
-    except subprocess.TimeoutExpired:
-        print("cdrdao command timed out.")
-        output = ""
-        cdrdao_status = 1
-    except FileNotFoundError:
-        print("cdrdao not found in PATH. Is it installed?")
-        output = ""
-        cdrdao_status = 1
-    except Exception as e:
-        print(f"cdrdao execution failed: {e}")
-        output = ""
-        cdrdao_status = 1
+signal.signal(signal.SIGINT, _signal_handler)
+signal.signal(signal.SIGTERM, _signal_handler)
 
-    disc_size = None
+def run_dialog(cmd, input_text=None):
+    env = os.environ.copy()
+    env["TERM"] = "linux"
+    with open('/dev/tty', 'w') as tty, open(err_log, 'w') as err_f:
+        proc = subprocess.run(cmd, env=env, input=input_text, text=True if input_text else False, stdout=tty, stderr=err_f, check=False)
+    if os.path.exists(err_log) and os.path.getsize(err_log) > 0:
+        with open(err_log, "r") as f:
+            print(f"Dialog error: {f.read().strip()}")
+        os.remove(err_log)
+    return proc.returncode
 
-    # === 1. Parse Leadout from log ===
-    if os.path.exists(TEMP_LOG):
-        try:
-            with open(TEMP_LOG, "r") as f:
-                log_content = f.read()
-            match = re.search(r"Leadout.*?\((\d+)\)", log_content)
+def save_disc(drive_path, title, system):
+    global cdrdao_proc, toc_file, bin_file
+
+    USB_ROOT = "/media/usb0/games"
+    if system == "psx":
+        base_dir = f"{USB_ROOT}/PSX"
+    elif system in ("mcd", "megacd"):
+        base_dir = f"{USB_ROOT}/MegaCD"
+    else:  # saturn
+        base_dir = f"{USB_ROOT}/Saturn"
+
+    for d in [f"{USB_ROOT}/PSX", f"{USB_ROOT}/Saturn", f"{USB_ROOT}/MegaCD"]:
+        os.makedirs(d, exist_ok=True)
+
+    cue_file = os.path.join(base_dir, f"{title}.cue")
+    bin_file = os.path.join(base_dir, f"{title}.bin")
+    toc_file = "/tmp/retrospin_temp.toc"
+
+    # Remove existing
+    for f in [cue_file, bin_file]:
+        if os.path.exists(f):
+            print(f"Removing existing file: {f}")
+            os.remove(f)
+
+    os.system("clear")
+
+    # Prompt
+    print("Executing dialog: Prompt to save disc")
+    cmd = [
+        "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
+        "--yesno", f"Game file not found: {title}. Save disc as .bin/.cue to USB at {base_dir}?",
+        "12", "50"
+    ]
+    response = run_dialog(cmd)
+    print(f"Dialog exit status: {response}")
+    if response != 0:
+        print("User declined or dialog failed")
+        return
+
+    os.system("clear")
+
+    # Show path
+    cmd = [
+        "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
+        "--msgbox", f"Preparing to save disc to:\n{cue_file}\n{bin_file}", "12", "70"
+    ]
+    run_dialog(cmd)
+
+    print(f"Preparing to save disc to: {cue_file}, {bin_file}...")
+
+    # Find cdrdao
+    ripdisc_path = "/usr/bin"
+    cdrdao = shutil.which("cdrdao", path=ripdisc_path + ':' + os.environ.get('PATH', ''))
+    if not cdrdao:
+        msg = f"Error: cdrdao not found at {ripdisc_path}/cdrdao or in PATH"
+        print(msg)
+        cmd = [
+            "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
+            "--msgbox", msg, "12", "70"
+        ]
+        run_dialog(cmd)
+        return
+
+    # Read TOC for size
+    print(f"Reading TOC data to detect disc size, logging to {temp_log}...")
+    with open(temp_log, "w") as log_f:
+        status = subprocess.run([cdrdao, "read-toc", "--device", drive_path, toc_file],
+                                stdout=log_f, stderr=subprocess.STDOUT).returncode
+
+    disc_sectors = None
+    if os.path.exists(temp_log):
+        with open(temp_log, "r") as f:
+            match = re.search(r"Leadout.*?\((\d+)\)", f.read())
             if match:
                 disc_sectors = int(match.group(1))
-                if disc_sectors > 0:
-                    disc_size = disc_sectors * 2352
-                    print(f"Disc size detected via TOC: {disc_size:,} bytes ({disc_sectors} sectors)")
-        except Exception as e:
-            print(f"Failed to read or parse {TEMP_LOG}: {e}")
 
-    # === 2. Fallback: blockdev ===
-    if disc_size is None:
-        print("TOC parsing failed, falling back to blockdev...")
+    if disc_sectors and disc_sectors > 0:
+        disc_size = disc_sectors * 2352
+        print(f"Disc size detected via TOC: {disc_size:,} bytes ({disc_sectors} sectors)")
+    else:
         try:
-            blockdev_output = subprocess.check_output(
-                ["blockdev", "--getsize64", drive_path],
-                text=True
-            ).strip()
-            disc_size = int(blockdev_output)
-            if disc_size > 0:
-                print(f"Disc size via blockdev: {disc_size:,} bytes")
-        except Exception as e:
-            print(f"blockdev failed: {e}")
+            disc_size = int(subprocess.check_output(["blockdev", "--getsize64", drive_path]).strip())
+            print(f"Disc size via blockdev: {disc_size:,} bytes")
+        except:
+            disc_size = 700 * 1024 * 1024
+            print(f"Using fallback size: {disc_size:,} bytes (700 MB)")
 
-    # === 3. Final fallback: 700 MB ===
-    if disc_size is None or disc_size <= 0:
-        disc_size = 700 * 1024 * 1024
-        print(f"Using fallback size: {disc_size:,} bytes (700 MB)")
+    disc_size_mb = disc_size // (1024 * 1024)
 
-    return disc_size  # Always returns a valid int
-def rip_disc(drive_path, title, system, gauge_proc):
-    """Rip disc to .bin/.cue using cdrdao and toc2cue."""
-    usb_path = get_usb_drive()
-    if not usb_path:
-        show_message("No USB drive found.", title="Retrospin")
+    # Find toc2cue
+    toc2cue = shutil.which("toc2cue", path=ripdisc_path + ':' + os.environ.get('PATH', ''))
+    if not toc2cue:
+        msg = f"Error: toc2cue not found at {ripdisc_path}/toc2cue or in PATH"
+        print(msg)
+        cmd = [
+            "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
+            "--msgbox", msg, "12", "70"
+        ]
+        run_dialog(cmd)
         return
-    save_path = os.path.join(usb_path, "games", system.upper())
-    os.makedirs(save_path, exist_ok=True)
-    bin_file = os.path.join(save_path, f"{title}.bin")
-    cue_file = os.path.join(save_path, f"{title}.cue")
 
-    # Simulate progress (replace with cdrdao output parsing if needed)
-    for i in range(0, 101, 10):
-        gauge_proc.stdin.write(f"XXX\n{i}\nRipping {title}...\nXXX\n".encode())
+    # Start cdrdao read-cd
+    cmd = [
+        cdrdao, "read-cd", "--read-raw", "--datafile", bin_file, "--driver", "generic-mmc:0x20000",
+        "--device", drive_path, "--read-subchan", "rw_raw", toc_file
+    ]
+    print(f"Starting cdrdao: {' '.join(cmd)}")
+    cdrdao_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Gauge
+    env = os.environ.copy()
+    env["TERM"] = "linux"
+    gauge_cmd = ["dialog", "--gauge", "RetroSpin", "12", "70", "0"]
+    with open('/dev/tty', 'w') as tty, open(err_log, 'w') as err_f:
+        gauge_proc = subprocess.Popen(gauge_cmd, stdin=subprocess.PIPE, stdout=tty, stderr=err_f, env=env, text=True)
+
+    start_time = time.time()
+    last_update = 0
+
+    try:
+        while cdrdao_proc.poll() is None:
+            time.sleep(1)
+            if not os.path.exists(bin_file):
+                continue
+
+            current_size = os.path.getsize(bin_file)
+            current_mb = current_size // (1024 * 1024)
+            percent = min(99, int((current_size / disc_size) * 100)) if disc_size > 0 else 0
+
+            elapsed = time.time() - start_time
+            rate = current_size / elapsed / (1024 * 1024) if elapsed > 0 else 0
+            remaining_bytes = disc_size - current_size
+            eta = remaining_bytes / (rate * 1024 * 1024) if rate > 0 else 0
+            mins = int(eta // 60)
+            secs = int(eta % 60)
+
+            if time.time() - last_update >= 5:
+                text = f"RetroSpin\nSaving {title}...\nSaved: {current_mb} MB / {disc_size_mb} MB\nEstimated time remaining: {mins} min {secs} sec\nTransfer rate: {rate:.2f} MB/s"
+                gauge_proc.stdin.write(f"XXX\n{percent}\n{text}\nXXX\n")
+                gauge_proc.stdin.flush()
+                last_update = time.time()
+
+        final_percent = 100 if cdrdao_proc.returncode == 0 else 0
+        gauge_proc.stdin.write(f"XXX\n{final_percent}\nFinalizing...\nXXX\n")
         gauge_proc.stdin.flush()
-        if i == 0:
-            subprocess.run([CDRDAO_PATH, "read-toc", "--device", drive_path, TOC_FILE], check=True)
-        elif i == 50:
-            subprocess.run([CDRDAO_PATH, "read-cd", "--datafile", bin_file, "--driver", "generic-mmc-raw", "--read-raw", TOC_FILE], check=True)
-        elif i == 90:
-            subprocess.run([TOC2CUE_PATH, TOC_FILE, cue_file], check=True)
-        time.sleep(1)  # Simulate work
-    #os.remove(TOC_FILE)
+        time.sleep(1)
 
-def save_disc(drive_path, title, system, serial):
-    """Prompt to save disc and rip to USB."""
-    info = f"Title: {title}\nSystem: {system}\nSerial: {serial}"
-    show_message(info, title="Retrospin")
-    if yes_no_prompt("Save this disc?", title="Retrospin"):
-        size_bytes = get_disc_size_toc(drive_path)
-        size_mb = size_bytes / (1024 * 1024)  # Convert to MB
-        est_time = f"Estimated time: {int(size_mb / 10)} minutes (at 10MB/s)"
-        show_message(est_time, title="Retrospin")
-        show_progress("Ripping disc...", lambda proc: rip_disc(drive_path, title, system, proc))
-        show_message("Disc saved successfully.", title="Retrospin")
+    except Exception as e:
+        print(f"Progress gauge error: {e}")
+    finally:
+        gauge_proc.stdin.close()
+        gauge_proc.wait()
+        if os.path.exists(err_log) and os.path.getsize(err_log) > 0:
+            with open(err_log, "r") as f:
+                print(f"Gauge dialog error: {f.read().strip()}")
+            os.remove(err_log)
+
+    cdrdao_status = cdrdao_proc.returncode
+    cdrdao_proc = None
+
+    if cdrdao_status == 0:
+        print("Save to USB complete")
+
+        if os.path.exists(toc_file):
+            print(f"Converting .toc to .cue: {cue_file}")
+            subprocess.run([toc2cue, toc_file, cue_file], check=True)
+            if os.path.exists(cue_file):
+                with open(cue_file, "r") as f:
+                    content = f.read()
+                content = content.replace(bin_file, f"{title}.bin")
+                with open(cue_file, "w") as f:
+                    f.write(content)
+                print(f"Successfully created .cue file: {cue_file}")
+            else:
+                final_message = f"Error: Failed to create .cue file\n.bin file saved at {bin_file}"
+                print(final_message)
+                cmd = [
+                    "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
+                    "--msgbox", final_message, "12", "70"
+                ]
+                run_dialog(cmd)
+                if os.path.exists(toc_file):
+                    os.remove(toc_file)
+                return
+            os.remove(toc_file)
+            print(f"Removed temporary .toc file: {toc_file}")
+        else:
+            final_message = f"Error: .toc file missing after cdrdao: {toc_file}\n.bin file saved at {bin_file}"
+            print(final_message)
+            cmd = [
+                "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
+                "--msgbox", final_message, "12", "70"
+            ]
+            run_dialog(cmd)
+            return
+
+        if os.path.exists(cue_file) and os.path.exists(bin_file):
+            print(f"Successfully saved {cue_file} and {bin_file}")
+            final_message = f"Disc saved successfully. Please close this dialog to restart the launcher and load {title}."
+        else:
+            print("Error: Missing .cue or .bin file after save")
+            final_message = "Disc save incomplete. Check {cue_file} and {bin_file}."
+    else:
+        print("Error occurred during disc save. Check {bin_file} and {toc_file} for partial data.")
+        final_message = f"Disc save failed. Partial data may be at {bin_file}. Close to restart launcher."
+
+    print("Executing dialog: Final message")
+    cmd = [
+        "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
+        "--msgbox", f"RetroSpin\n{final_message}", "12", "50"
+    ]
+    run_dialog(cmd)
+
+    print("Restarting RetroSpin launcher via retrospin_service.sh...")
+    subprocess.run(["/media/fat/Scripts/retrospin_service.sh"])
+
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("Usage: save_disc.py <drive_path> <title> <system>")
+        sys.exit(1)
+    drive_path, title, system = sys.argv[1], sys.argv[2], sys.argv[3]
+    save_disc(drive_path, title, system)

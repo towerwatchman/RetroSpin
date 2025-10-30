@@ -33,8 +33,8 @@ def find_game_file(title, system):
     """Search for .chd or complete .cue/.bin game files based on system."""
     paths = {
         "psx": PSX_GAME_PATHS,
-        "ss": SATURN_GAME_PATHS,
-        "mcd": MCD_GAME_PATHS
+        "saturn": SATURN_GAME_PATHS,
+        "megacd": MCD_GAME_PATHS
     }[system]
     
     # Sanitize title for filename use (keep parentheses, spaces, hyphens)
