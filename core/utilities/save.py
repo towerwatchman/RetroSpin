@@ -193,9 +193,10 @@ def save_disc(drive_path, title, system):
 
     # Start cdrdao read-cd, no output to screen
     cmd = [
-        cdrdao, "read-cd", "--read-raw", "--datafile", bin_file, "--driver", "generic-mmc-raw",
-        "--device", drive_path, "--read-subchan", "rw_raw", toc_cue_file
+        cdrdao, "read-cd", "--read-raw", "--speed", "max", "--datafile", bin_file, "--driver", "generic-mmc-raw",
+        "--device", drive_path, toc_cue_file
     ]
+
     print(f"Starting cdrdao: {' '.join(cmd)}")
     cdrdao_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -259,9 +260,9 @@ def save_disc(drive_path, title, system):
     if cdrdao_status == 0:
         print("Save to USB complete")
 
-        if os.path.exists(toc_file):
+        if os.path.exists(toc_cue_file):
             print(f"Converting .toc to .cue: {cue_file}")
-            subprocess.run([toc2cue, toc_file, cue_file], check=True)
+            subprocess.run([toc2cue, toc_cue_file, cue_file], check=True)
             if os.path.exists(cue_file):
                 with open(cue_file, "r") as f:
                     content = f.read()
@@ -277,13 +278,14 @@ def save_disc(drive_path, title, system):
                     "--msgbox", final_message, "12", "70"
                 ]
                 run_dialog(cmd)
-                if os.path.exists(toc_file):
-                    os.remove(toc_file)
+                if os.path.exists(toc_cue_file):
+                    os.remove(toc_cue_file)
                 return
-            os.remove(toc_file)
-            print(f"Removed temporary .toc file: {toc_file}")
+
+            os.remove(toc_cue_file)
+            print(f"Removed temporary .toc file: {toc_cue_file}")
         else:
-            final_message = f"Error: .toc file missing after cdrdao: {toc_file}\n.bin file saved at {bin_file}"
+            final_message = f"Error: .toc file missing after cdrdao: {toc_cue_file}\n.bin file saved at {bin_file}"
             print(final_message)
             cmd = [
                 "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
