@@ -11,7 +11,6 @@ import shutil
 cdrdao_proc = None
 toc_file = None
 bin_file = None
-temp_log = "/tmp/retrospin_cdrdao.log"
 err_log = "/tmp/retrospin_err.log"
 
 def cleanup():
@@ -25,7 +24,7 @@ def cleanup():
             cdrdao_proc.kill()
             cdrdao_proc.wait()
 
-    for path in [toc_file, bin_file, temp_log]:
+    for path in [toc_file, bin_file]:
         if path and os.path.exists(path):
             try:
                 os.remove(path)
@@ -73,7 +72,16 @@ def save_disc(drive_path, title, system):
     bin_file = os.path.join(base_dir, f"{title}.bin")
     toc_file = "/tmp/retrospin_temp.toc"
 
-    # Remove existing
+    # Delete toc file if exist at beginning
+    for path in [toc_file]:
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+                print(f"Removed existing temp file: {path}")
+            except Exception as e:
+                print(f"Failed to remove existing {path}: {e}")
+
+    # Remove existing cue/bin
     for f in [cue_file, bin_file]:
         if os.path.exists(f):
             print(f"Removing existing file: {f}")
@@ -118,29 +126,38 @@ def save_disc(drive_path, title, system):
         run_dialog(cmd)
         return
 
-    # Read TOC for size
-    print(f"Reading TOC data to detect disc size, logging to {temp_log}...")
-    with open(temp_log, "w") as log_f:
-        status = subprocess.run([cdrdao, "read-toc", "--device", drive_path, toc_file],
-                                stdout=log_f, stderr=subprocess.STDOUT).returncode
+    # Comment out read-toc
+    # print(f"Reading TOC data to detect disc size...")
+    # toc_cmd = [cdrdao, "read-toc", "--driver", "generic-mmc-raw", "--device", drive_path, "--datafile", temp_datafile, toc_file]
+    # toc_result = subprocess.run(toc_cmd)
+    # if toc_result.returncode != 0:
+    #     print(f"read-toc failed with status {toc_result.returncode}")
+    #     final_message = "Failed to read TOC from disc."
+    #     cmd = [
+    #         "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
+    #         "--msgbox", final_message, "12", "70"
+    #     ]
+    #     run_dialog(cmd)
+    #     return
 
-    disc_sectors = None
-    if os.path.exists(temp_log):
-        with open(temp_log, "r") as f:
-            match = re.search(r"Leadout.*?\((\d+)\)", f.read())
-            if match:
-                disc_sectors = int(match.group(1))
+    # disc_sectors = None
+    # if os.path.exists(toc_file):
+    #     # To get leadout, we can run cdrdao show-toc or parse the toc file
+    #     show_toc_cmd = [cdrdao, "show-toc", toc_file]
+    #     show_result = subprocess.run(show_toc_cmd, capture_output=True, text=True)
+    #     toc_output = show_result.stdout + show_result.stderr
+    #     print("show-toc output:")
+    #     print(toc_output)
+    #     match = re.search(r"Leadout.*?\((\d+)\)", toc_output)
+    #     if match:
+    #         disc_sectors = int(match.group(1))
 
-    if disc_sectors and disc_sectors > 0:
-        disc_size = disc_sectors * 2352
-        print(f"Disc size detected via TOC: {disc_size:,} bytes ({disc_sectors} sectors)")
-    else:
-        try:
-            disc_size = int(subprocess.check_output(["blockdev", "--getsize64", drive_path]).strip())
-            print(f"Disc size via blockdev: {disc_size:,} bytes")
-        except:
-            disc_size = 700 * 1024 * 1024
-            print(f"Using fallback size: {disc_size:,} bytes (700 MB)")
+    try:
+        disc_size = int(subprocess.check_output(["blockdev", "--getsize64", drive_path]).strip())
+        print(f"Disc size via blockdev: {disc_size:,} bytes")
+    except:
+        disc_size = 700 * 1024 * 1024
+        print(f"Using fallback size: {disc_size:,} bytes (700 MB)")
 
     disc_size_mb = disc_size // (1024 * 1024)
 
@@ -156,13 +173,13 @@ def save_disc(drive_path, title, system):
         run_dialog(cmd)
         return
 
-    # Start cdrdao read-cd
+    # Start cdrdao read-cd, output to terminal as it happens
     cmd = [
-        cdrdao, "read-cd", "--read-raw", "--datafile", bin_file, "--driver", "generic-mmc:0x20000",
+        cdrdao, "read-cd", "--read-raw", "--datafile", bin_file, "--driver", "generic-mmc-raw",
         "--device", drive_path, "--read-subchan", "rw_raw", toc_file
     ]
     print(f"Starting cdrdao: {' '.join(cmd)}")
-    cdrdao_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    cdrdao_proc = subprocess.Popen(cmd)
 
     # Gauge
     env = os.environ.copy()
