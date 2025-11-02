@@ -12,9 +12,14 @@ cdrdao_proc = None
 toc_file = None
 bin_file = None
 err_log = "/tmp/retrospin_err.log"
+temp_datafile = "/tmp/retrospin_temp.bin"
+toc_file = "/tmp/retrospin_temp.toc"
+toc_cue_file = "/tmp/retrospin_temp_cue.toc"
+
+success = False  # Flag to indicate successful completion
 
 def cleanup():
-    global cdrdao_proc, toc_file, bin_file
+    global cdrdao_proc, toc_file, bin_file, success
     if cdrdao_proc and cdrdao_proc.poll() is None:
         print(f"Terminating cdrdao process {cdrdao_proc.pid}...")
         cdrdao_proc.terminate()
@@ -24,7 +29,7 @@ def cleanup():
             cdrdao_proc.kill()
             cdrdao_proc.wait()
 
-    for path in [toc_file, bin_file]:
+    for path in [temp_datafile]:
         if path and os.path.exists(path):
             try:
                 os.remove(path)
@@ -32,16 +37,26 @@ def cleanup():
             except Exception as e:
                 print(f"Failed to remove {path}: {e}")
 
-import atexit
-atexit.register(cleanup)
+    # Only delete toc and bin if not successful (interrupted or failed)
+    if not success:
+        for path in [toc_file, bin_file, toc_cue_file]:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                    print(f"Removed partial file: {path}")
+                except Exception as e:
+                    print(f"Failed to remove {path}: {e}")
 
-def _signal_handler(sig, frame):
-    print(f"\nReceived signal {sig}, cleaning up...")
-    cleanup()
-    sys.exit(0)
+#import atexit
+#atexit.register(cleanup)
 
-signal.signal(signal.SIGINT, _signal_handler)
-signal.signal(signal.SIGTERM, _signal_handler)
+#def _signal_handler(sig, frame):
+#    print(f"\nReceived signal {sig}, cleaning up...")
+#    cleanup()
+#    sys.exit(0)
+
+#signal.signal(signal.SIGINT, _signal_handler)
+#signal.signal(signal.SIGTERM, _signal_handler)
 
 def run_dialog(cmd, input_text=None):
     env = os.environ.copy()
@@ -55,7 +70,7 @@ def run_dialog(cmd, input_text=None):
     return proc.returncode
 
 def save_disc(drive_path, title, system):
-    global cdrdao_proc, toc_file, bin_file
+    global cdrdao_proc, toc_file, bin_file, success
 
     USB_ROOT = "/media/usb0/games"
     if system == "psx":
@@ -69,11 +84,10 @@ def save_disc(drive_path, title, system):
         os.makedirs(d, exist_ok=True)
 
     cue_file = os.path.join(base_dir, f"{title}.cue")
-    bin_file = os.path.join(base_dir, f"{title}.bin")
-    toc_file = "/tmp/retrospin_temp.toc"
+    bin_file = os.path.join(base_dir, f"{title}.bin")    
 
-    # Delete toc file if exist at beginning
-    for path in [toc_file]:
+    # Delete toc file and temp_datafile if exist at beginning
+    for path in [toc_file, temp_datafile, toc_cue_file]:
         if os.path.exists(path):
             try:
                 os.remove(path)
@@ -126,38 +140,42 @@ def save_disc(drive_path, title, system):
         run_dialog(cmd)
         return
 
-    # Comment out read-toc
-    # print(f"Reading TOC data to detect disc size...")
-    # toc_cmd = [cdrdao, "read-toc", "--driver", "generic-mmc-raw", "--device", drive_path, "--datafile", temp_datafile, toc_file]
-    # toc_result = subprocess.run(toc_cmd)
-    # if toc_result.returncode != 0:
-    #     print(f"read-toc failed with status {toc_result.returncode}")
-    #     final_message = "Failed to read TOC from disc."
-    #     cmd = [
-    #         "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
-    #         "--msgbox", final_message, "12", "70"
-    #     ]
-    #     run_dialog(cmd)
-    #     return
+    # Read TOC for size, no output to screen
+    print(f"Reading TOC data to detect disc size...")
+    toc_cmd = [cdrdao, "read-toc", "--driver", "generic-mmc-raw", "--device", drive_path, "--datafile", temp_datafile, toc_file]
+    toc_result = subprocess.run(toc_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if toc_result.returncode != 0:
+        print(f"read-toc failed with status {toc_result.returncode}")
+        final_message = "Failed to read TOC from disc."
+        cmd = [
+            "dialog", "--clear", "--backtitle", "RetroSpin", "--title", "RetroSpin",
+            "--msgbox", final_message, "12", "70"
+        ]
+        run_dialog(cmd)
+        return
 
-    # disc_sectors = None
-    # if os.path.exists(toc_file):
-    #     # To get leadout, we can run cdrdao show-toc or parse the toc file
-    #     show_toc_cmd = [cdrdao, "show-toc", toc_file]
-    #     show_result = subprocess.run(show_toc_cmd, capture_output=True, text=True)
-    #     toc_output = show_result.stdout + show_result.stderr
-    #     print("show-toc output:")
-    #     print(toc_output)
-    #     match = re.search(r"Leadout.*?\((\d+)\)", toc_output)
-    #     if match:
-    #         disc_sectors = int(match.group(1))
+    disc_sectors = None
+    if os.path.exists(toc_file):
+        # To get leadout, we can run cdrdao show-toc or parse the toc file
+        show_toc_cmd = [cdrdao, "show-toc", toc_file]
+        show_result = subprocess.run(show_toc_cmd, capture_output=True, text=True)
+        toc_output = show_result.stdout + show_result.stderr
+        print("show-toc output:")
+        print(toc_output)
+        match = re.search(r"Leadout.*?\((\d+)\)", toc_output)
+        if match:
+            disc_sectors = int(match.group(1))
 
-    try:
-        disc_size = int(subprocess.check_output(["blockdev", "--getsize64", drive_path]).strip())
-        print(f"Disc size via blockdev: {disc_size:,} bytes")
-    except:
-        disc_size = 700 * 1024 * 1024
-        print(f"Using fallback size: {disc_size:,} bytes (700 MB)")
+    if disc_sectors and disc_sectors > 0:
+        disc_size = disc_sectors * 2352
+        print(f"Disc size detected via TOC: {disc_size:,} bytes ({disc_sectors} sectors)")
+    else:
+        try:
+            disc_size = int(subprocess.check_output(["blockdev", "--getsize64", drive_path]).strip())
+            print(f"Disc size via blockdev: {disc_size:,} bytes")
+        except:
+            disc_size = 700 * 1024 * 1024
+            print(f"Using fallback size: {disc_size:,} bytes (700 MB)")
 
     disc_size_mb = disc_size // (1024 * 1024)
 
@@ -173,13 +191,13 @@ def save_disc(drive_path, title, system):
         run_dialog(cmd)
         return
 
-    # Start cdrdao read-cd, output to terminal as it happens
+    # Start cdrdao read-cd, no output to screen
     cmd = [
         cdrdao, "read-cd", "--read-raw", "--datafile", bin_file, "--driver", "generic-mmc-raw",
-        "--device", drive_path, "--read-subchan", "rw_raw", toc_file
+        "--device", drive_path, "--read-subchan", "rw_raw", toc_cue_file
     ]
     print(f"Starting cdrdao: {' '.join(cmd)}")
-    cdrdao_proc = subprocess.Popen(cmd)
+    cdrdao_proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Gauge
     env = os.environ.copy()
@@ -192,7 +210,7 @@ def save_disc(drive_path, title, system):
     last_update = 0
 
     # Initial text with all fields, blanks for missing
-    text = f"RetroSpin\nSaving {title}...\nSaved:  \nEstimated time remaining:  \nTransfer rate: "
+    text = f"RetroSpin\nReading TOC from Disk, Please Wait...\nSaved: 0 MB / {disc_size_mb} MB  \nEstimated time remaining: Estimating  \nTransfer rate: 0.0 MB/s"
     gauge_proc.stdin.write(f"XXX\n0\n{text}\nXXX\n")
     gauge_proc.stdin.flush()
 
@@ -235,6 +253,7 @@ def save_disc(drive_path, title, system):
             os.remove(err_log)
 
     cdrdao_status = cdrdao_proc.returncode
+    print(cdrdao_status)
     cdrdao_proc = None
 
     if cdrdao_status == 0:
@@ -276,6 +295,7 @@ def save_disc(drive_path, title, system):
         if os.path.exists(cue_file) and os.path.exists(bin_file):
             print(f"Successfully saved {cue_file} and {bin_file}")
             final_message = f"Disc saved successfully. Please close this dialog to restart the launcher and load {title}."
+            success = True  # Set success flag
         else:
             print("Error: Missing .cue or .bin file after save")
             final_message = "Disc save incomplete. Check {cue_file} and {bin_file}."
