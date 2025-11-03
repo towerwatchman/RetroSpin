@@ -1,5 +1,22 @@
-# RetroSpin for MiSTer
-![Static Badge](https://img.shields.io/badge/Project_Status-Not_Working-red)
+<div align="center">
+  <a href="https://atlas-gamesdb.com/">
+    <img height="180px" src="https://github.com/towerwatchman/RetroSpin/blob/main/assets/images/retrospin.png" alt="atlas logo">
+  </a>
+<!--![GitHub release (with filter)](https://img.shields.io/github/v/release/towerwatchman/Atlas?style=flat&logo=github&logoColor=white&label=)-->
+<!--[![React](https://img.shields.io/badge/-ReactJs-21222B?&logo=react&logoColor=8ED5FF&style=for-the-badge)](#)
+[![Windows](https://custom-icon-badges.demolab.com/badge/Windows-0078D6?logo=windows11&logoColor=white&style=for-the-badge)](#)
+[![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](#)
+[![Electron](https://img.shields.io/badge/-electron-61DBFB?style=for-the-badge&labelColor=17202A&logo=electron&logoColor=61DBFB)](#)
+[![SQLite](https://img.shields.io/badge/SQLite-%2307405e.svg?logo=sqlite&logoColor=white&style=for-the-badge)](#)-->
+<!--[![MacOS](https://shields.io/badge/MacOS--9cf?logo=Apple&style=social)](#)-->
+<!--![Static Badge](https://img.shields.io/badge/-docs-green.svg?logo=Wikipedia)-->
+
+![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/towerwatchman/RetroSpin/.github%2Fworkflows%2Fbuild_retrospin_db.yml?event=push&label=release&style=for-the-badge)
+![GitHub issues](https://img.shields.io/github/issues-raw/towerwatchman/RetroSpin?style=for-the-badge)
+![GitHub pull requests](https://img.shields.io/github/issues-pr-raw/towerwatchman/RetroSpin?style=for-the-badge)
+![GitHub all releases](https://img.shields.io/github/downloads/towerwatchman/RetroSpin/total?style=for-the-badge)
+<!--![GitHub Workflow Status (with event)](https://img.shields.io/github/actions/workflow/status/towerwatchman/Atlas/.github%2Fworkflows%2Fpr-test-build.yml?event=push&label=pr)-->
+</div>
 
 ## Overview
 
@@ -18,7 +35,7 @@
 >           The system order is the order im working to add each system.
 #### Systems Supported
 - [x] Sega Mega CD & Sega CD | 393 Games
-- [ ] Sony Playstation | 11706 Games
+- [x] Sony Playstation | 11706 Games
 - [ ] Sega Saturn | 2047 Games
 - [ ] SNK Neo Geo CD | 53 Games
 - [ ] Panasonic 3DO Interactive Multiplayer
