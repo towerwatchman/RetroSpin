@@ -1,209 +1,140 @@
-#!/usr/bin/env python3
-
-import argparse
-import os
-import platform
-import subprocess
 import sys
-import logging
-import signal
+import os
 import time
+import subprocess
+from core.utilities.ui import show_main_menu, show_progress, show_message, yes_no_prompt
+from core.utilities.service import install_service, remove_service, is_service_running
+from core.utilities.disc import read_disc
+from core.update_database import populate_database,create_table_schema, connect_to_database
+from core.utilities.launcher import launch_game_on_mister
+from core.utilities.files import find_game_file
+from core.utilities.core import find_cores
 
-# Platform-specific imports
-if platform.system() == "Windows" or platform.system() == "Linux":
-    import tkinter as tk
-    from tkinter import messagebox, ttk
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(SCRIPT_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
 
-# Setup logging
-logging.basicConfig(
-    filename="/tmp/retrospin.log" if platform.system() != "Windows" else "retrospin.log",
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+#Creating database
+conn, cursor = connect_to_database()
+create_table_schema(cursor)
 
-def run_script(script_name, args, root=None):
-    """Execute platform-specific script."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    system_info = platform.uname()
-    is_mister = system_info.system == "Linux" and "MiSTer" in system_info.release
-    if is_mister:
-        script_path = os.path.join(script_dir, f"{script_name}.sh")
-        cmd = ["/bin/bash", script_path] + args
-    else:
-        script_path = os.path.join(script_dir, f"{script_name}.py")
-        cmd = [sys.executable, script_path] + args
-    if not os.path.exists(script_path):
-        logging.error(f"Script not found: {script_path}")
-        if is_mister:
-            subprocess.run(
-                ["dialog", "--msgbox", f"Error: {script_name} script not found", "10", "40"],
-                stdin=open("/dev/tty2", "r"), stdout=open("/dev/tty2", "w"), check=False
-            )
-        else:
-            messagebox.showerror("RetroSpin Error", f"{script_name} script not found")
-        return
-    logging.info(f"Running {script_path} with args: {args}")
-    try:
-        subprocess.run(cmd, check=True)
-        if not is_mister and root:
-            root.destroy()
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Script {script_name} failed: {e}")
-        if is_mister:
-            subprocess.run(
-                ["dialog", "--msgbox", f"Error running {script_name}: {e}", "10", "40"],
-                stdin=open("/dev/tty2", "r"), stdout=open("/dev/tty2", "w"), check=False
-            )
-        else:
-            messagebox.showerror("RetroSpin Error", f"Error running {script_name}: {e}")
 
-def setup_mister_console():
-    """Initialize MiSTer console."""
-    console = "/dev/tty2"
-    logging.info(f"Setting up console: {console}")
-    if os.path.exists(console) and os.access(console, os.W_OK):
-        try:
-            with open(console, "w") as f:
-                subprocess.run(["stty", "sane"], stdout=f, stderr=f, check=False)
-                subprocess.run(["tput", "init"], stdout=f, stderr=f, check=False)
-                f.write("\033[?25h")
-            if os.path.exists("/sbin/chvt"):
-                subprocess.run(["chvt", "2"], check=False)
-        except Exception as e:
-            logging.error(f"Failed to setup console: {e}")
-    else:
-        logging.error(f"Console {console} not accessible")
-
-def kill_mister():
-    """Kill MiSTer process."""
-    logging.info("Checking for MiSTer process...")
-    try:
-        ps_output = subprocess.run(["ps", "aux"], capture_output=True, text=True, check=True).stdout
-        for line in ps_output.splitlines():
-            if "/media/fat/MiSTer" in line and "grep" not in line:
-                pid = int(line.split()[1])
-                logging.info(f"Killing MiSTer process with PID {pid}...")
-                os.kill(pid, signal.SIGKILL)
-                timeout = 5
-                elapsed = 0
-                while elapsed < timeout:
-                    if not any("/media/fat/MiSTer" in l for l in subprocess.run(["ps", "aux"], capture_output=True, text=True).stdout.splitlines()):
-                        logging.info("MiSTer process terminated")
-                        return True
-                    time.sleep(1)
-                    elapsed += 1
-                logging.error("Failed to terminate MiSTer process after 5 seconds")
-                return False
-        logging.info("No MiSTer process found")
-        return True
-    except Exception as e:
-        logging.error(f"Failed to kill MiSTer: {e}")
-        return False
-
-def relaunch_mister():
-    """Relaunch MiSTer process."""
-    if os.path.exists("/media/fat/MiSTer"):
-        logging.info("Relaunching MiSTer process...")
-        try:
-            subprocess.Popen(["/media/fat/MiSTer"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(2)
-            ps_output = subprocess.run(["ps", "aux"], capture_output=True, text=True, check=True).stdout
-            if any("/media/fat/MiSTer" in line for line in ps_output.splitlines()):
-                logging.info("MiSTer relaunched successfully")
-                return True
-            logging.error("Failed to relaunch MiSTer")
-            return False
-        except Exception as e:
-            logging.error(f"Failed to relaunch MiSTer: {e}")
-            return False
-    return True
-
-def windows_ui():
-    """Launch tkinter UI for Windows/Linux."""
-    root = tk.Tk()
-    root.title("RetroSpin")
-    root.geometry("300x200")
-
-    tk.Label(root, text="RetroSpin Disc Manager", font=("Arial", 14)).pack(pady=10)
-
-    def run_test():
-        run_script("test_disc", ["D:"], root)
-
-    def run_save():
-        run_script("save_disc", ["D:", "TestGame", "ss"], root)
-
-    def warn_service():
-        messagebox.showwarning("RetroSpin", "Service mode is MiSTer-only")
-        root.destroy()
-
-    tk.Button(root, text="Test Disc", command=run_test, width=20).pack(pady=5)
-    tk.Button(root, text="Save Disc", command=run_save, width=20).pack(pady=5)
-    tk.Button(root, text="Run Service", command=warn_service, width=20, state="disabled").pack(pady=5)
-
-    root.mainloop()
-
-def mister_dialog():
-    """Launch dialog menu for MiSTer."""
-    if kill_mister():
-        setup_mister_console()
-        cmd = ["dialog", "--menu", "RetroSpin Disc Manager", "15", "40", "3",
-               "1", "Test Disc",
-               "2", "Save Disc",
-               "3", "Run Service"]
-        result = subprocess.run(
-            cmd, stdin=open("/dev/tty2", "r"), stdout=subprocess.PIPE,
-            stderr=open("/tmp/retrospin_dialog.err", "w"), text=True, check=False
-        )
-        choice = result.stdout.strip()
-        if result.returncode == 0 and choice:
-            if choice == "1":
-                run_script("test_disc", ["/dev/sr0"])
-            elif choice == "2":
-                run_script("save_disc", ["/dev/sr0", "TestGame", "ss"])
-            elif choice == "3":
-                run_script("service", [])
-        relaunch_mister()
-    else:
-        subprocess.run(
-            ["dialog", "--msgbox", "Failed to stop MiSTer process", "10", "40"],
-            stdin=open("/dev/tty2", "r"), stdout=open("/dev/tty2", "w"), check=False
-        )
-        relaunch_mister()
+def save_disc(drive_path, title, system, serial):
+    """Call save_disc from save.py."""
+    from core.utilities.save import save_disc as save_disc_func
+    save_disc_func(drive_path, title, system, serial)
 
 def main():
-    parser = argparse.ArgumentParser(description="RetroSpin Disc Manager")
-    parser.add_argument("--test", action="store_true", help="Test disc serial")
-    parser.add_argument("--save", action="store_true", help="Save disc to .bin/.cue")
-    parser.add_argument("--service", action="store_true", help="Run as background service")
-    parser.add_argument("--drive", default="/dev/sr0" if platform.system() != "Windows" else "D:", help="CD drive path")
-    parser.add_argument("--title", default="TestGame", help="Game title for save")
-    parser.add_argument("--system", default="ss", choices=["psx", "ss", "mcd"], help="System type")
-    args = parser.parse_args()
-
-    system_info = platform.uname()
-    is_mister = system_info.system == "Linux" and "MiSTer" in system_info.release
-
-    if not (args.test or args.save or args.service):
-        if is_mister:
-            mister_dialog()
-        else:
-            windows_ui()
-        return
-
-    if is_mister and args.service:
-        run_script("service", [])
-    elif args.test:
-        run_script("test_disc", [args.drive])
-    elif args.save:
-        run_script("save_disc", [args.drive, args.title, args.system])
+    """Handle main program logic."""
+    print("Starting main")
+    args = sys.argv[1:]
+    print("checking args")
+    if "--save" in args:
+        if len(args) != 4:
+            error_msg = f"Error: --save expects 4 arguments (drive_path, title, system, serial), got {len(args)}: {args}"
+            with open("/tmp/retrospin_err.log", "a") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - retrospin.py: {error_msg}\n")
+            show_message(error_msg, title="Retrospin")
+            sys.exit(1)
+        drive_path, title, system, serial = args[args.index("--save") + 1:]
+        save_disc(drive_path, title, system, serial)
+    elif args:
+        error_msg = f"Unknown arguments: {args}. Use no arguments for menu or --save with 4 args."
+        with open("/tmp/retrospin_err.log", "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - retrospin.py: {error_msg}\n")
+        show_message(error_msg, title="Retrospin")
+        sys.exit(1)
     else:
-        if is_mister:
-            subprocess.run(
-                ["dialog", "--msgbox", "Invalid option or service mode not supported", "10", "40"],
-                stdin=open("/dev/tty2", "r"), stdout=open("/dev/tty2", "w"), check=False
-            )
-        else:
-            messagebox.showerror("RetroSpin Error", "Invalid option")
+        print("going to menu")
+        handle_menu()
+
+def handle_menu():
+    """Display and handle the main menu."""
+    while True:
+        choice = show_main_menu(is_service_running())
+        print(choice)
+        if choice == "install_remove":
+            if is_service_running():
+                if yes_no_prompt("Retrospin is running as a service. Remove it?"):
+                    remove_service()
+                    show_message("Service removed successfully.")
+            else:
+                if yes_no_prompt("Install Retrospin as a service?"):
+                    install_service()
+                    show_message("Service installed successfully.")
+        elif choice == "test_disc":
+            test_disc()
+        elif choice == "save_disc":
+            drive_path, title, system, serial = read_disc()
+            if title != "none":
+                save_disc(drive_path, title, system, serial)
+            else:
+                show_message("No disc detected or invalid disc.")
+        elif choice == "update_db":
+            update_database()
+        elif choice == "exit":
+            break
+
+def test_disc():
+    """Test for a disc and display its info."""
+    show_message("Testing disc... Please insert a disc if not already.", title="Retrospin")
+    start_time = time.time()
+    while time.time() - start_time < 10:
+        drive_path, title, system, serial = read_disc()
+        if drive_path == "none":
+            show_message("No optical drive detected.", title="Retrospin")
+            return
+        if title != "none":
+            info = f"Drive: {drive_path}\nTitle: {title}\nSystem: {system}\nSerial: {serial}"
+            show_message(info, title="Retrospin")
+            return
+        show_message("Trying to read disc...", title="Retrospin", non_blocking=True)
+        time.sleep(1)
+    show_message("No disc detected after 10 seconds.", title="Retrospin")
+
+def update_database():
+    """Update the game database."""
+    print("update database")
+    show_progress("Updating database...", populate_database)
+
+def run_as_service():
+    """Run Retrospin in service mode, polling for discs."""
+    cores = find_cores(["psx"])  # Start with PSX
+    if "psx" not in cores:
+        print("PSX core not found. Service exiting.")
+        return
+    core_path = cores["psx"]
+    print("Retrospin service started. Polling for discs...")
+    while True:
+        drive_path, title, system, serial = read_disc()
+        if title != "none" and system == "psx":
+            game_file = find_game_file(title, system)
+            if game_file:
+                launch_game_on_mister(serial, title, core_path, system, drive_path, find_game_file)
+            else:
+                show_message(f"Disc detected: {title} ({serial}). Launching save menu...", title="Retrospin", non_blocking=True)
+                # Ensure title is quoted to handle spaces
+                subprocess.Popen([
+                    sys.executable,
+                    os.path.abspath(__file__),
+                    "--save",
+                    drive_path,
+                    f"{title}",  # Ensure title is a single argument
+                    system,
+                    serial
+                ])
+        time.sleep(5)  # Poll every 5 seconds
 
 if __name__ == "__main__":
-    main()
+    try:
+        if "--service" in sys.argv:
+            run_as_service()
+        else:
+            main()
+    except Exception as e:
+        error_msg = f"Fatal error in retrospin.py: {str(e)}"
+        with open("/tmp/retrospin_err.log", "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - retrospin.py: {error_msg}\n")
+        show_message(error_msg, title="Retrospin")
+        
+        sys.exit(1)

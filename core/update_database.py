@@ -6,15 +6,21 @@ import xml.etree.ElementTree as ET
 import sqlite3
 import re
 from datetime import datetime
+from core.utilities.database import create_table_schema, connect_to_database
 import tempfile
+import subprocess
+import sys
+import time
 
 # URL template for Redump DAT files
 REDUMP_URL_TEMPLATE = "http://redump.org/datfile/{}/serial,version"
-DATA_DIR = "DATA"
-DB_PATH = "games.db"
+DATA_DIR = "data"
+DAT_DIR = os.path.join(DATA_DIR, "dat")
+DB_PATH = os.path.join(DATA_DIR, "games.db")
 
 # List of systems to scrape
 SYSTEMS = ["psx", "ajcd", "acd", "cd32", "cdtv", "pce", "ngcd", "3do", "cdi", "mcd", "ss"]
+SYSTEM_NAMES = ["Sony Playstation", "Atari Jaguar CD", "Amiga CD", "Amiga CD32", "Amiga CDTV", "NEC PC Engine", "Neo Geo CD", "Panasonic 3DO", "Philips CDI", "Sega CD", "Sega Saturn"]
 
 # Region mappings
 REGION_MAP = {
@@ -116,41 +122,23 @@ REGION_LANGUAGE_MAP = {
     "South Africa": "English"
 }
 
+# Browser-like headers for requests
+REQUEST_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "Accept-Encoding": "gzip, deflate",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Referer": "http://redump.org/downloads/"
+}
+
 def ensure_data_dir():
-    """Create DATA directory if it doesn't exist."""
+    """Create data and dat directories if they don't exist."""
     if not os.path.exists(DATA_DIR):
         os.makedirs(DATA_DIR)
-
-def connect_to_database():
-    """Connect to games.db and return connection and cursor."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    return conn, cursor
-
-def ensure_table_schema(cursor):
-    """Ensure games and unknown tables exist with correct schema."""
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS games (
-            serial TEXT,
-            title TEXT,
-            category TEXT,
-            region TEXT,
-            system TEXT,
-            language TEXT,
-            PRIMARY KEY (serial, system)
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS unknown (
-            serial TEXT,
-            title TEXT,
-            category TEXT,
-            region TEXT,
-            system TEXT,
-            language TEXT,
-            timestamp TEXT
-        )
-    ''')
+    if not os.path.exists(DAT_DIR):
+        os.makedirs(DAT_DIR)
 
 def extract_region_and_language(game_name):
     """Extract region and language from game name."""
@@ -191,70 +179,107 @@ def extract_region_and_language(game_name):
     
     return region, language
 
-def download_and_extract_dat(system):
+def download_and_extract_dat(i, system, system_name, gauge_process, base_percent, system_share):
     """Download Redump DAT zip for a system, extract .dat, and return its path."""
     url = REDUMP_URL_TEMPLATE.format(system)
+    zip_path = None
+    for attempt in range(2):
+        try:
+            if attempt == 0:
+                update_gauge(gauge_process, f"Fetching DAT file for {system_name}...")
+            else:
+                update_gauge(gauge_process, f"Retrying fetch for {system_name}...")
+            response = requests.get(url, stream=True, timeout=10, headers=REQUEST_HEADERS)
+            response.raise_for_status()
+            
+            total_size = int(response.headers.get('content-length', 0))
+            
+            # Extract filename or use default
+            filename = None
+            if 'Content-Disposition' in response.headers:
+                disposition = response.headers['Content-Disposition']
+                match = re.search(r'filename="(.+)"', disposition)
+                if match:
+                    filename = match.group(1)
+            if not filename:
+                filename = f"{system}_redump_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.zip"
+            
+            zip_path = os.path.join(DATA_DIR, filename)
+            
+            downloaded = 0
+            with open(zip_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=4096):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            sub_percent = (downloaded / total_size) * 100
+                            overall_percent = int(base_percent + (sub_percent / 100) * (system_share / 2))  # Download is half of system share
+                            update_gauge(gauge_process, f"Downloading DAT file for {system_name}: {int(sub_percent)}%", overall_percent)
+            
+            if total_size > 0:
+                update_gauge(gauge_process, f"Downloaded DAT file for {system_name}", int(base_percent + (system_share / 2)))
+            else:
+                update_gauge(gauge_process, f"Saved zip file for {system_name}", int(base_percent + (system_share / 2)))
+            
+            # If successful, break the retry loop
+            break
+        
+        except requests.RequestException as e:
+            update_gauge(gauge_process, f"Error downloading for {system_name}: {e}")
+            if attempt == 0:
+                update_gauge(gauge_process, "Retrying in 1 second...")
+                time.sleep(1)
+            else:
+                return None
+    
+    if zip_path is None:
+        return None
+    
+    # Now attempt extraction
     try:
-        print(f"Fetching DAT file for {system} from {url}...")
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        
-        # Extract filename or use default
-        filename = None
-        if 'Content-Disposition' in response.headers:
-            disposition = response.headers['Content-Disposition']
-            match = re.search(r'filename="(.+)"', disposition)
-            if match:
-                filename = match.group(1)
-        if not filename:
-            filename = f"{system}_redump_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.zip"
-        
-        zip_path = os.path.join(DATA_DIR, filename)
-        with open(zip_path, 'wb') as f:
-            f.write(response.content)
-        print(f"Saved zip file to {zip_path}")
-        
-        # Extract the .dat file
+        update_gauge(gauge_process, f"Extracting zip for {system_name}...", int(base_percent + (system_share / 2)))
         with tempfile.TemporaryDirectory() as temp_dir:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_dir)
-                print(f"Extracted zip file to temporary directory: {temp_dir}")
             
             dat_files = glob.glob(os.path.join(temp_dir, "*.dat"))
             if not dat_files:
-                raise ValueError(f"No .dat file found in the zip for {system}")
+                raise ValueError(f"No .dat file found in the zip for {system_name}")
             if len(dat_files) > 1:
-                print(f"Warning: Multiple .dat files found for {system}, using the first: {dat_files[0]}")
+                update_gauge(gauge_process, f"Warning: Multiple .dat files for {system_name}, using first")
             dat_path = dat_files[0]
             
-            # Move .dat to DATA directory
+            # Move .dat to dat directory
             dat_filename = os.path.basename(dat_path)
-            final_dat_path = os.path.join(DATA_DIR, dat_filename)
+            final_dat_path = os.path.join(DAT_DIR, dat_filename)
             with open(dat_path, 'rb') as src, open(final_dat_path, 'wb') as dst:
                 dst.write(src.read())
-            print(f"Saved DAT file to {final_dat_path}")
-            
-            # Delete the zip file
-            os.remove(zip_path)
-            print(f"Deleted zip file: {zip_path}")
-            
-            return final_dat_path
+        update_gauge(gauge_process, f"Saved DAT file for {system_name}", int(base_percent + (system_share * 0.6)))
+        
+        # Delete the zip file
+        os.remove(zip_path)
+        update_gauge(gauge_process, f"Deleted zip file for {system_name}", int(base_percent + (system_share * 0.6)))
+        
+        return final_dat_path
     
-    except requests.RequestException as e:
-        print(f"Error downloading DAT file for {system}: {e}")
-        return None
-    except zipfile.BadZipFile:
-        print(f"Error: Downloaded file for {system} is not a valid zip")
+    except zipfile.BadZipFile as e:
+        update_gauge(gauge_process, f"Error: Invalid zip for {system_name}")
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
         return None
     except Exception as e:
-        print(f"Error processing DAT file for {system}: {e}")
+        update_gauge(gauge_process, f"Error processing for {system_name}: {e}")
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
         return None
 
-def parse_redump_xml(file_path, system):
+def parse_redump_xml(file_path, system, system_name, gauge_process, base_percent, system_share):
     """Parse Redump DAT (XML) and return list of game data."""
     games = []
     unknown_games = []
     try:
+        update_gauge(gauge_process, f"Parsing XML for {system_name}...", int(base_percent + (system_share * 0.6)))
         tree = ET.parse(file_path)
         root = tree.getroot()
         
@@ -291,25 +316,47 @@ def parse_redump_xml(file_path, system):
                         "language": language
                     })
         
+        update_gauge(gauge_process, f"Parsed {len(games)} games and {len(unknown_games)} unknown for {system_name}", int(base_percent + (system_share * 0.8)))
         return games, unknown_games
     
     except Exception as e:
-        print(f"Error parsing Redump XML for {system}: {e}")
+        update_gauge(gauge_process, f"Error parsing XML for {system_name}: {e}")
         return [], []
 
-def populate_database():
+def update_gauge(gauge_process, message, percent=None):
+    """Update the dialog gauge with new message and optional percent."""
+    if percent is not None:
+        input_str = f"XXX\n{percent}\n{message}\nXXX\n"
+    else:
+        input_str = f"XXX\n{message}\nXXX\n"
+    gauge_process.stdin.write(input_str.encode())
+    gauge_process.stdin.flush()
+
+def populate_database(gauge_process):
     """Scrape Redump DAT files for all systems and populate games and unknown tables."""
     ensure_data_dir()
     conn, cursor = connect_to_database()
-    ensure_table_schema(cursor)
+    create_table_schema(cursor)
     
-    for system in SYSTEMS:
-        dat_path = download_and_extract_dat(system)
+    num_systems = len(SYSTEMS)
+    system_share = 100 / num_systems
+    
+    failed_systems = []
+    
+    for i in range(num_systems):
+        system = SYSTEMS[i]
+        system_name = SYSTEM_NAMES[i]
+        base_percent = i * system_share
+        
+        dat_path = download_and_extract_dat(i, system, system_name, gauge_process, base_percent, system_share)
         if not dat_path:
+            failed_systems.append(system_name)
+            update_gauge(gauge_process, f"Failed to process {system_name}", int(base_percent + system_share))
             continue
         
-        games, unknown_games = parse_redump_xml(dat_path, system)
+        games, unknown_games = parse_redump_xml(dat_path, system, system_name, gauge_process, base_percent, system_share)
         
+        update_gauge(gauge_process, f"Inserting data for {system_name} into database...", int(base_percent + (system_share * 0.8)))
         # Insert into games table
         for game in games:
             cursor.execute('''
@@ -327,7 +374,7 @@ def populate_database():
         # Insert into unknown table
         for game in unknown_games:
             cursor.execute('''
-                INSERT INTO unknown (serial, title, category, region, system, language, timestamp)
+                INSERT OR REPLACE INTO unknown (serial, title, category, region, system, language, timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 game["serial"],
@@ -340,23 +387,28 @@ def populate_database():
             ))
         
         conn.commit()
-        print(f"Added {len(games)} games and {len(unknown_games)} unknown entries for {system}")
+        update_gauge(gauge_process, f"Inserted data for {system_name}", int(base_percent + system_share))
     
-    conn.close()
-    print("Database population complete.")
-
-def main():
-    print("Scraping Redump DAT files and populating games database...")
-    populate_database()
-    # Verify database contents
-    conn, cursor = connect_to_database()
+    # Close the gauge
+    gauge_process.stdin.close()
+    gauge_process.wait()
+    
+    # Get counts for final message
     cursor.execute("SELECT COUNT(*) FROM games")
     game_count = cursor.fetchone()[0]
     cursor.execute("SELECT COUNT(*) FROM unknown")
     unknown_count = cursor.fetchone()[0]
-    print(f"Total games in database: {game_count}")
-    print(f"Total unknown entries: {unknown_count}")
+    
     conn.close()
-
-if __name__ == "__main__":
-    main()
+    
+    # Show completion message
+    message = f"Database update complete.\nTotal games: {game_count}\nTotal unknown entries: {unknown_count}"
+    if failed_systems:
+        message += f"\nFailed to update: {', '.join(failed_systems)}"
+    cmd = ['dialog', '--backtitle', 'RetroSpin Disc Manager', '--msgbox', message, '10', '50']
+    cmd_str = ' '.join([f'"{arg}"' if ' ' in arg else arg for arg in cmd]) + ' >/dev/tty'
+    try:
+        subprocess.run(cmd_str, shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        with open("/tmp/retrospin_err.log", "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - update_database.py: Failed to display msgbox: {e}\n")
