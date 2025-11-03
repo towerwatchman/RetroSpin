@@ -30,7 +30,7 @@ def clean_game_title(title):
     return cleaned.strip()
 
 def find_game_file(title, system):
-    """Search for .chd or complete .cue/.bin game files based on system."""
+    """Search for .chd or complete .cue/.bin game files based on system, including subfolders."""
     paths = {
         "psx": PSX_GAME_PATHS,
         "saturn": SATURN_GAME_PATHS,
@@ -42,33 +42,36 @@ def find_game_file(title, system):
     print(f"Searching for game file with full title: {safe_title}")
     
     # Try full title first
-    # Check for .chd
+    # Check for .chd in base paths and subfolders
     game_filename = f"{safe_title}.chd"
     for base_path in paths:
-        game_file = os.path.join(base_path, game_filename)
-        if os.path.exists(game_file):
-            print(f"Found .chd game file with full title: {game_file}")
-            if os.access(game_file, os.R_OK):
-                print(f"Game file {game_file} is readable")
-            else:
-                print(f"Game file {game_file} is not readable")
-            return game_file
+        for root, dirs, files in os.walk(base_path):
+            if game_filename in files:
+                game_file = os.path.join(root, game_filename)
+                print(f"Found .chd game file with full title: {game_file}")
+                if os.access(game_file, os.R_OK):
+                    print(f"Game file {game_file} is readable")
+                else:
+                    print(f"Game file {game_file} is not readable")
+                return game_file
     
-    # Check for .cue and corresponding .bin
+    # Check for .cue and corresponding .bin in base paths and subfolders
     game_filename = f"{safe_title}.cue"
     for base_path in paths:
-        cue_file = os.path.join(base_path, game_filename)
-        bin_file = os.path.join(base_path, f"{safe_title}.bin")
-        if os.path.exists(cue_file):
-            if os.path.exists(bin_file):
-                print(f"Found complete .cue/.bin pair with full title: {cue_file}, {bin_file}")
-                if os.access(cue_file, os.R_OK) and os.access(bin_file, os.R_OK):
-                    print(f"Game files {cue_file} and {bin_file} are readable")
+        for root, dirs, files in os.walk(base_path):
+            if game_filename in files:
+                cue_file = os.path.join(root, game_filename)
+                bin_filename = f"{safe_title}.bin"
+                bin_file = os.path.join(root, bin_filename)
+                if os.path.exists(bin_file):
+                    print(f"Found complete .cue/.bin pair with full title: {cue_file}, {bin_file}")
+                    if os.access(cue_file, os.R_OK) and os.access(bin_file, os.R_OK):
+                        print(f"Game files {cue_file} and {bin_file} are readable")
+                    else:
+                        print(f"Game files {cue_file} or {bin_file} are not readable")
+                    return cue_file
                 else:
-                    print(f"Game files {cue_file} or {bin_file} are not readable")
-                return cue_file
-            else:
-                print(f"Found .cue without .bin for full title: {cue_file}")
+                    print(f"Found .cue without .bin for full title: {cue_file}")
     
     # If full title fails, try cleaned title
     cleaned_title = clean_game_title(title)
@@ -76,33 +79,36 @@ def find_game_file(title, system):
         print(f"No files found with full title, trying cleaned title: {cleaned_title}")
         # Sanitize cleaned title
         safe_cleaned_title = re.sub(r'[<>:"/\\|?*]', '', cleaned_title).strip()
-        # Check for .chd
+        # Check for .chd in base paths and subfolders
         game_filename = f"{safe_cleaned_title}.chd"
         for base_path in paths:
-            game_file = os.path.join(base_path, game_filename)
-            if os.path.exists(game_file):
-                print(f"Found .chd game file with cleaned title: {game_file}")
-                if os.access(game_file, os.R_OK):
-                    print(f"Game file {game_file} is readable")
-                else:
-                    print(f"Game file {game_file} is not readable")
-                return game_file
+            for root, dirs, files in os.walk(base_path):
+                if game_filename in files:
+                    game_file = os.path.join(root, game_filename)
+                    print(f"Found .chd game file with cleaned title: {game_file}")
+                    if os.access(game_file, os.R_OK):
+                        print(f"Game file {game_file} is readable")
+                    else:
+                        print(f"Game file {game_file} is not readable")
+                    return game_file
         
-        # Check for .cue and corresponding .bin
+        # Check for .cue and corresponding .bin in base paths and subfolders
         game_filename = f"{safe_cleaned_title}.cue"
         for base_path in paths:
-            cue_file = os.path.join(base_path, game_filename)
-            bin_file = os.path.join(base_path, f"{safe_cleaned_title}.bin")
-            if os.path.exists(cue_file):
-                if os.path.exists(bin_file):
-                    print(f"Found complete .cue/.bin pair with cleaned title: {cue_file}, {bin_file}")
-                    if os.access(cue_file, os.R_OK) and os.access(bin_file, os.R_OK):
-                        print(f"Game files {cue_file} and {bin_file} are readable")
+            for root, dirs, files in os.walk(base_path):
+                if game_filename in files:
+                    cue_file = os.path.join(root, game_filename)
+                    bin_filename = f"{safe_cleaned_title}.bin"
+                    bin_file = os.path.join(root, bin_filename)
+                    if os.path.exists(bin_file):
+                        print(f"Found complete .cue/.bin pair with cleaned title: {cue_file}, {bin_file}")
+                        if os.access(cue_file, os.R_OK) and os.access(bin_file, os.R_OK):
+                            print(f"Game files {cue_file} and {bin_file} are readable")
+                        else:
+                            print(f"Game files {cue_file} or {bin_file} are not readable")
+                        return cue_file
                     else:
-                        print(f"Game files {cue_file} or {bin_file} are not readable")
-                    return cue_file
-                else:
-                    print(f"Found .cue without .bin for cleaned title: {cue_file}")
+                        print(f"Found .cue without .bin for cleaned title: {cue_file}")
     
     print(f"No complete .chd or .cue/.bin game files found for: {safe_title} or {cleaned_title}")
     return None
