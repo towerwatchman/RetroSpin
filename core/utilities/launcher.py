@@ -16,7 +16,7 @@ def create_mgl_file(core_path, game_file, mgl_path, system):
     """Create a temporary MGL file for the game."""
     mgl = ET.Element("mistergamedescription")
     rbf = ET.SubElement(mgl, "rbf")
-    rbf.text = "_console/psx" if system == "psx" else "_console/saturn" if system == "ss" else "_console/megacd"
+    rbf.text = f"_console/{system}"
     file_tag = ET.SubElement(mgl, "file")
     file_tag.set("delay", "1")
     file_tag.set("type", "s")
@@ -59,7 +59,7 @@ def launch_game_on_mister(game_serial, title, core_path, system, drive_path, fin
     try:
         create_mgl_file(core_path, game_file, TMP_MGL_PATH, system)
         command = f"load_core {TMP_MGL_PATH}"
-        print(f"Preparing to send command to {MISTER_CMD}: {command}")
+        print(f"Preparing to send command to {MISTER_CMD}: {command} for system {system}")
         with open(MISTER_CMD, "w") as cmd_file:
             cmd_file.write(command + "\n")
             cmd_file.flush()
